@@ -1,0 +1,11 @@
+{
+  "theme_color": "#3854A5",
+  "background_color": "#5590CC",
+  "display": "standalone",
+  "start_url": ".",
+  "short_name": "CNFM",
+  "name": "Core Network & Facilities Management",
+  "icons": [
+    
+  ]
+}
