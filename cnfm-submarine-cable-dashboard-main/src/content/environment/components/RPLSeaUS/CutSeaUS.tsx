@@ -105,73 +105,73 @@ const CutSeaUS: React.FC<CutSeaUSProps> = ({ handleClose }) => {
   // Only render the button if the container ref is available
   return buttonContainerRef.current
     ? ReactDOM.createPortal(
-      <>
-        <Button
-          variant="contained"
-          sx={{
-            backgroundColor: '#2e7d32',
-            fontSize: '12px',
-            '&:hover': {
-              backgroundColor: '#1b5e20'
-            }
-          }}
-          startIcon={<ContentCutIcon />}
-          onClick={handleOpen}
-        >
-          Cut SEA-US Cable
-        </Button>
+        <>
+          <Button
+            variant="contained"
+            sx={{
+              backgroundColor: '#2e7d32',
+              fontSize: '12px',
+              '&:hover': {
+                backgroundColor: '#1b5e20'
+              }
+            }}
+            startIcon={<ContentCutIcon />}
+            onClick={handleOpen}
+          >
+            Cut SEA-US Cable
+          </Button>
 
-        {/* Modal Dialog */}
-        <Dialog
-          open={open}
-          onClose={handleDialogClose}
-          maxWidth="sm"
-          fullWidth
-        >
-          <DialogTitle sx={{ mt: 3 }}>
-            <Typography variant="h5">Simulate SEA-US Cable Fault</Typography>
-          </DialogTitle>
-          <Divider />
-          <CardContent>
-            <Box sx={{ width: '100%' }}>
-              <FormControl fullWidth sx={{ mb: 2 }}>
-                <InputLabel id="segment-select-label">
-                  Select Segment
-                </InputLabel>
-                <Select
-                  labelId="segment-select-label"
-                  id="segment-select"
-                  value={selectedSegment}
-                  label="Select Segment"
-                  onChange={handleSegmentChange}
-                >
-                  <MenuItem value={1}>
-                    Segment 1 | Kauditan - BU Davao City
-                  </MenuItem>
-                  <MenuItem value={2}>
-                    Segment 2 | Davao - BU Davao City
-                  </MenuItem>
-                  <MenuItem value={3}>
-                    Segment 3 | Piti - BU Davao City
-                  </MenuItem>
-                  <MenuItem value={4}>Segment 4 | Piti - Hawaii BU</MenuItem>
-                  <MenuItem value={5}>
-                    Segment 5 | Hawaii - Hawaii BU
-                  </MenuItem>
-                  <MenuItem value={6}>
-                    Segment 6 | Hermosa, USA - Hawaii BU
-                  </MenuItem>
-                </Select>
-              </FormControl>
+          {/* Modal Dialog */}
+          <Dialog
+            open={open}
+            onClose={handleDialogClose}
+            maxWidth="sm"
+            fullWidth
+          >
+            <DialogTitle sx={{ mt: 3 }}>
+              <Typography variant="h5">Simulate SEA-US Cable Fault</Typography>
+            </DialogTitle>
+            <Divider />
+            <CardContent>
+              <Box sx={{ width: '100%' }}>
+                <FormControl fullWidth sx={{ mb: 2 }}>
+                  <InputLabel id="segment-select-label">
+                    Select Segment
+                  </InputLabel>
+                  <Select
+                    labelId="segment-select-label"
+                    id="segment-select"
+                    value={selectedSegment}
+                    label="Select Segment"
+                    onChange={handleSegmentChange}
+                  >
+                    <MenuItem value={1}>
+                      Segment 1 | Kauditan - BU Davao City
+                    </MenuItem>
+                    <MenuItem value={2}>
+                      Segment 2 | Davao - BU Davao City
+                    </MenuItem>
+                    <MenuItem value={3}>
+                      Segment 3 | Piti - BU Davao City
+                    </MenuItem>
+                    <MenuItem value={4}>Segment 4 | Piti - Hawaii BU</MenuItem>
+                    <MenuItem value={5}>
+                      Segment 5 | Hawaii - Hawaii BU
+                    </MenuItem>
+                    <MenuItem value={6}>
+                      Segment 6 | Hermosa, USA - Hawaii BU
+                    </MenuItem>
+                  </Select>
+                </FormControl>
 
-              {/* Render the selected segment component */}
-              {renderSegmentComponent()}
-            </Box>
-          </CardContent>
-        </Dialog>
-      </>,
-      buttonContainerRef.current
-    )
+                {/* Render the selected segment component */}
+                {renderSegmentComponent()}
+              </Box>
+            </CardContent>
+          </Dialog>
+        </>,
+        buttonContainerRef.current
+      )
     : null;
 };
 
