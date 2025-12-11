@@ -273,8 +273,15 @@ function CableCutMarkers({ cableSegment }: CableCutMarkersProps) {
         });
 
         // --- Restore hover popup functionality ---
-        // Format date
-        let dateStr = markerData.fault_date ? new Date(markerData.fault_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : 'Unknown';
+        // Format date/time
+        const dateObj = markerData.fault_date ? new Date(markerData.fault_date) : null;
+        const dateStr = dateObj && !isNaN(dateObj.getTime())
+          ? new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(dateObj)
+          : 'Unknown';
+        const hasTime = markerData.fault_date ? markerData.fault_date.includes('T') : false;
+        const timeStr = dateObj && !isNaN(dateObj.getTime()) && hasTime
+          ? new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(dateObj)
+          : '--';
         // Safely format distance
         let distanceStr = 'N/A';
         if (typeof markerData.distance === 'number' && !isNaN(markerData.distance)) {
@@ -310,7 +317,7 @@ function CableCutMarkers({ cableSegment }: CableCutMarkersProps) {
             </tr>
             <tr>
               <td style="font-weight: bold; padding-bottom: 5px; color: #333;">Depth:</td>
-              <td style="text-align: right; padding-bottom: 5px; color: #666;">${depth} m</td>
+              <td style="text-align: right; padding-bottom: 5px; color: #666;">${Number(depth || 0).toFixed(1)} m</td>
             </tr>
             <tr>
               <td style="font-weight: bold; padding-bottom: 5px; color: #333;">Lat:</td>
@@ -322,7 +329,11 @@ function CableCutMarkers({ cableSegment }: CableCutMarkersProps) {
             </tr>
             <tr>
               <td style="font-weight: bold; padding-bottom: 5px; color: #333;">Date:</td>
-              <td style="text-align: right; padding-bottom: 5px; color: #666; font-size: 11px;">${dateStr}</td>
+              <td style="text-align: right; padding-bottom: 2px; color: #666; font-size: 11px;">${dateStr}</td>
+            </tr>
+            <tr>
+              <td style="font-weight: bold; padding-bottom: 5px; color: #333;">Time:</td>
+              <td style="text-align: right; padding-bottom: 5px; color: #666; font-size: 11px;">${timeStr}</td>
             </tr>
             <tr>
               <td style="font-weight: bold; padding-bottom: 5px; color: #333;">Cable Type:</td>

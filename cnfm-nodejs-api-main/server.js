@@ -257,28 +257,9 @@ app.post('/cable-cuts', async (req, res) => {
       }
     }
 
-    // Check if cable_cuts table has cable_type column
-    let hasCableTypeCol = false;
-    try {
-      const desc = await new Promise((resolve, reject) => {
-        db.query('DESCRIBE cable_cuts', (err, results) => {
-          if (err) reject(err);
-          else resolve(results);
-        });
-      });
-      hasCableTypeCol = Array.isArray(desc) && desc.some((c) => c.Field === 'cable_type');
-    } catch (e) {
-      hasCableTypeCol = false;
-    }
-
-    // Build the insert query
-    const fields = ['cut_id', 'distance', 'cut_type', 'fault_date', 'simulated', 'latitude', 'longitude', 'depth'];
-    const values = [cut_id, distance, cut_type, fault_date, simulated, latitude, longitude, depth];
-
-    if (hasCableTypeCol && cable_type) {
-      fields.push('cable_type');
-      values.push(cable_type);
-    }
+    // Always include cable_type; default to 'Unknown' if missing
+    const fields = ['cut_id', 'distance', 'cut_type', 'fault_date', 'simulated', 'latitude', 'longitude', 'depth', 'cable_type'];
+    const values = [cut_id, distance, cut_type, fault_date, simulated, latitude, longitude, depth, cable_type || 'Unknown'];
 
     const placeholders = fields.map(() => '?').join(', ');
     const query = `INSERT INTO cable_cuts (${fields.join(', ')}) VALUES (${placeholders})`;
