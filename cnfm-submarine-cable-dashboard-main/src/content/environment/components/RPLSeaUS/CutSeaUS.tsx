@@ -688,6 +688,9 @@ const CutSeaUS: React.FC = () => {
         sx={{
           backgroundColor: '#2e7d32',
           fontSize: '12px',
+          width: 200,
+          height: 44,
+          borderRadius: '10px',
           '&:hover': { backgroundColor: '#1b5e20' }
         }}
         startIcon={<ContentCutIcon />}
@@ -822,18 +825,7 @@ const CutSeaUS: React.FC = () => {
                     step: 0.001
                   }}
                 />
-                {preview && (
-                  <Typography variant="caption" color="text.secondary">
-                    Preview: {preview.lat.toFixed(6)}, {preview.lng.toFixed(6)}{' '}
-                    (depth:{' '}
-                    {preview.depth != null &&
-                    Number.isFinite(preview.depth as number)
-                      ? Number(preview.depth).toFixed(1)
-                      : 'Unknown'}
-                    {preview.cableType ? `, cable type: ${preview.cableType}` : ''}
-                    )
-                  </Typography>
-                )}
+                {/* Preview removed per request */}
               </Box>
 
               <TextField

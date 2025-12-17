@@ -43,8 +43,9 @@ const ReturnButton = () => {
         button.style.backgroundColor = '#1976d2'; // Primary color
         button.style.color = 'white';
         button.style.border = 'none';
-        button.style.borderRadius = '4px';
-        button.style.padding = '6px 16px';
+        button.style.borderRadius = '10px';
+        button.style.width = '200px';
+        button.style.height = '44px';
         button.style.fontSize = '13px';
         button.style.fontWeight = '500';
         button.style.fontFamily = '"Roboto", "Helvetica", "Arial", sans-serif';

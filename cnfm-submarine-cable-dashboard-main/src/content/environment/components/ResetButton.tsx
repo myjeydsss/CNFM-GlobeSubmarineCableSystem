@@ -39,8 +39,20 @@ const ResetButton = () => {
     };
   }, [map]);
 
-  // Handle Dialog Open/Close
   const handleReset = async () => {
+    const confirm = await Swal.fire({
+      title: 'Reset simulation?',
+      text: 'This will remove all simulated cable cuts.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#6c757d',
+      confirmButtonText: 'Yes, reset',
+      cancelButtonText: 'Cancel'
+    });
+
+    if (!confirm.isConfirmed) return;
+
     try {
       const response = await fetch(`${apiBaseUrl}${port}/delete-cable-cuts`, {
         method: 'DELETE'
@@ -49,12 +61,15 @@ const ResetButton = () => {
       const result = await response.json();
 
       if (response.ok) {
+        await Swal.fire('Reset complete', 'Simulation has been cleared.', 'success');
         window.location.reload();
       } else {
         throw new Error(result.message || 'Failed to clear data');
       }
     } catch (error) {
-      Swal.fire('Error!', error.message || 'Something went wrong', 'error');
+      const message =
+        error instanceof Error ? error.message : 'Something went wrong';
+      Swal.fire('Error!', message, 'error');
     }
   };
 
@@ -67,6 +82,9 @@ const ResetButton = () => {
             sx={{
               backgroundColor: 'gray',
               fontSize: '13px',
+              width: 200,
+              height: 44,
+              borderRadius: '10px',
               '&:hover': {
                 backgroundColor: '#a0a0a0'
               }
