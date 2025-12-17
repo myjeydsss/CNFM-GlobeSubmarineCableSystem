@@ -18,9 +18,9 @@ import React, { useEffect, useState, useCallback } from 'react';
 import SegmentUpdate from './SegmentUpdate';
 
 const legendItems = [
-  { name: 'TGN-IA', color: '#FFFF00', },
-  { name: 'SJC', color: '#1976D2' },
-  { name: 'SEA-US', color: '#2E7D32' },
+  { name: 'TGN-IA', color: '#FFFF00' },
+  { name: 'SJC', color: '#005DFF' },
+  { name: 'SEA-US', color: '#E60023' },
   { name: 'C2C', color: 'gray' }
 ];
 
@@ -231,7 +231,7 @@ function AdminDashboard() {
                       <Box sx={{ flexGrow: 1 }} />
                       <Box>
                         <Typography variant="body2">
-                          Source File: {lastUpdate || 'No Source Found'}
+                          {lastUpdate ? `Source File: ${lastUpdate}` : ''}
                         </Typography>
                       </Box>
                       <Box

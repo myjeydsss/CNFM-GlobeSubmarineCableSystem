@@ -224,6 +224,27 @@ const CableMap: React.FC<CableMapProps> = ({ selectedCable, selectedCutType, map
   const mapRef = useRef<any>(null);
   const mountedRef = useRef(true);
 
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.setAttribute('data-leaflet-focus-fix', 'true');
+    style.textContent = `
+      .leaflet-interactive:focus {
+        outline: none;
+      }
+      .leaflet-interactive {
+        transition: filter 0.15s ease, stroke-width 0.15s ease, opacity 0.15s ease;
+      }
+      .segment-highlight {
+        filter: brightness(1.25);
+      }
+    `;
+    document.head.appendChild(style);
+
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
+
   // TanStack Query hooks for data fetching
   const {
     data: statsData,

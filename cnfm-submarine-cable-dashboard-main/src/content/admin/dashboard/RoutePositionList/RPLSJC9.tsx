@@ -1,16 +1,4 @@
 import { useEffect, useState } from 'react';
-import {
-  Box,
-  Button,
-  CardContent,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  Divider,
-  Typography,
-  useTheme
-} from '@mui/material';
 import { Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import CableCutMarkers from 'src/content/environment/components/CableCutFetching';
@@ -95,13 +83,13 @@ function DynamicMarker({
 }
 
 function RPLSJC9() {
-  const theme = useTheme();
   const apiBaseUrl = process.env.REACT_APP_API_BASE_URL;
   const port = process.env.REACT_APP_PORT;
   const [positions, setPositions] = useState<[number, number][]>([]);
   const [markers, setMarkers] = useState<MarkerData[]>([]);
-  const [defineCableOpen, setDefineCableOpen] = useState(false);
-  const [segmentData, setSegmentData] = useState<any[]>([]);
+  const [segmentLengthKm, setSegmentLengthKm] = useState<number | null>(null);
+  const [segmentFirstEvent, setSegmentFirstEvent] = useState<string | null>(null);
+  const [segmentLastEvent, setSegmentLastEvent] = useState<string | null>(null);
   const [isHovered, setIsHovered] = useState(false);
 
   // ✅ Combine all related state values into one object
@@ -176,8 +164,46 @@ function RPLSJC9() {
         const result = await response.json();
 
         if (Array.isArray(result) && result.length > 0) {
-          // Store the full segment data for hover popup
-          setSegmentData(result);
+          const cumulativeValues = result
+            .map((item: any) => item.cable_cumulative_total)
+            .map((value: any) => (typeof value === 'string' ? parseFloat(value) : value))
+            .filter((value: any) => typeof value === 'number' && !Number.isNaN(value));
+
+          setSegmentLengthKm(
+            cumulativeValues.length ? Math.max(...cumulativeValues) : null
+          );
+          const eventRows = result
+            .map((item: any) => {
+              const lat = item.full_latitude ?? item.latitude ?? item.lat;
+              const lng = item.full_longitude ?? item.longitude ?? item.lng ?? item.lon;
+              const parsedLat = typeof lat === 'string' ? parseFloat(lat) : lat;
+              const parsedLng = typeof lng === 'string' ? parseFloat(lng) : lng;
+
+              return {
+                event: item.event,
+                lat: parsedLat,
+                lng: parsedLng
+              };
+            })
+            .filter(
+              (row: any) =>
+                typeof row.lat === 'number' &&
+                !Number.isNaN(row.lat) &&
+                typeof row.lng === 'number' &&
+                !Number.isNaN(row.lng) &&
+                row.lat !== 0 &&
+                row.lng !== 0 &&
+                row.event
+            );
+
+          setSegmentFirstEvent(eventRows.length ? eventRows[0].event : null);
+          setSegmentLastEvent(
+            eventRows.length ? eventRows[eventRows.length - 1].event : null
+          );
+
+
+
+
 
           // Build positions for the polyline based on full_latitude and full_longitude
           const mappedPositions = result
@@ -245,45 +271,25 @@ function RPLSJC9() {
     return () => clearInterval(interval);
   }, [apiBaseUrl, port]);
 
-  const handleOpenDefine = () => setDefineCableOpen(true);
-  const handleCloseDefine = () => setDefineCableOpen(false);
-
-  // Define polyline path options based on hover state
+      // Define polyline path options
   const getPathOptions = () => {
-    const baseColor = stats.avgUtilization > 0 ? 'blue' : 'red';
-
-    if (isHovered) {
-      return {
-        color: baseColor,
-        weight: 6,
-        opacity: 1,
-        // CSS box-shadow equivalent for SVG paths - creates glow effect
-        className: 'glowing-polyline'
-      };
-    }
+    const baseColor = '#005DFF';
 
     return {
       color: baseColor,
-      weight: 4,
-      opacity: 0.8
+      weight: isHovered ? 6 : 4,
+      opacity: isHovered ? 1 : 0.8,
+      className: isHovered ? 'segment-highlight' : undefined
     };
   };
+  const segmentLengthLabel = segmentLengthKm !== null
+    ? `${segmentLengthKm.toFixed(3)} km`
+    : '-- km';
+  const segmentEventLabel =
+    segmentFirstEvent && segmentLastEvent
+      ? `${segmentFirstEvent} <span aria-hidden=\"true\" style=\"padding: 0 6px;\">&rarr;</span> ${segmentLastEvent}`
+      : '--';
 
-  // Add CSS for glowing effect
-  useEffect(() => {
-    const style = document.createElement('style');
-    style.textContent = `
-      .glowing-polyline {
-        filter: drop-shadow(0 0 8px currentColor) drop-shadow(0 0 16px currentColor);
-        transition: all 0.3s ease;
-      }
-    `;
-    document.head.appendChild(style);
-
-    return () => {
-      document.head.removeChild(style);
-    };
-  }, []);
 
   return (
     <>
@@ -293,17 +299,15 @@ function RPLSJC9() {
         positions={positions}
         pathOptions={getPathOptions()}
         eventHandlers={{
-          click: handleOpenDefine, // Open modal on click
           mouseover: (e) => {
             const layer = e.target;
             const latlng = e.latlng;
 
-            // Set hover state to trigger glow effect
             setIsHovered(true);
 
             // Create hover popup that follows cursor
             layer
-              .bindTooltip('SJC Segment 9', {
+              .bindTooltip(`<div style="text-align: center;">SJC Segment 9 | ${segmentLengthLabel}<br/>${segmentEventLabel}</div>`, {
                 permanent: false,
                 direction: 'top',
                 offset: [0, -10],
@@ -325,8 +329,8 @@ function RPLSJC9() {
           mouseout: (e) => {
             const layer = e.target;
 
-            // Remove hover state to remove glow effect
             setIsHovered(false);
+
 
             layer.closeTooltip();
           }
@@ -357,82 +361,6 @@ function RPLSJC9() {
           />
         );
       })}
-      {/* Define Cable Modal Dialog */}
-      <Dialog
-        open={defineCableOpen}
-        onClose={handleCloseDefine}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>
-          <Typography variant="h5">SJC Submarine Cable Details</Typography>
-        </DialogTitle>
-        <Divider />
-        <DialogContent>
-          <CardContent>
-            <Box sx={{ width: '100%' }}>
-              <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                Ready For Service
-              </Typography>
-              <Typography variant="body1" color="primary" paragraph>
-                2013 June
-              </Typography>
-
-              <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                Cable Length
-              </Typography>
-              <Typography variant="body1" paragraph>
-                8,900 km
-              </Typography>
-
-              <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                Owners
-              </Typography>
-              <Typography variant="body1" paragraph>
-                China Mobile, China Telecom, Chunghwa Telecom, Globe Telecom,
-                Google, KDDI, National Telecom, Singtel, Telkom Indonesia,
-                Unified National Networks (UNN)
-              </Typography>
-
-              <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                Suppliers
-              </Typography>
-              <Typography variant="body1" color="primary" paragraph>
-                NEC, SubCom
-              </Typography>
-
-              <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                Landing Points
-              </Typography>
-              <Box component="ul" sx={{ pl: 2 }}>
-                <Typography component="li" variant="body1" color="primary">
-                  Telisai, Brunei
-                </Typography>
-                <Typography component="li" variant="body1" color="primary">
-                  Chung Hom Kok, China
-                </Typography>
-                <Typography component="li" variant="body1" color="primary">
-                  Shantou, China
-                </Typography>
-                <Typography component="li" variant="body1" color="primary">
-                  Chikura, Japan
-                </Typography>
-                <Typography component="li" variant="body1" color="primary">
-                  Nasugbu, Philippines
-                </Typography>
-                <Typography component="li" variant="body1" color="primary">
-                  Tuas, Singapore
-                </Typography>
-              </Box>
-            </Box>
-          </CardContent>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDefine} color="primary">
-            Close
-          </Button>
-        </DialogActions>
-      </Dialog>
     </>
   );
 }
