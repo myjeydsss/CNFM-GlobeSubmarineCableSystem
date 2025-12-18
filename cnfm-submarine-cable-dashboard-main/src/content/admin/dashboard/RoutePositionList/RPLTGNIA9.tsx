@@ -354,7 +354,7 @@ function RPLTGNIA9() {
 
             // Create hover popup that follows cursor
             layer
-              .bindTooltip(`<div style="text-align: center;">TGN-IA Segment 9 | ${segmentLengthLabel}<br/>${segmentEventLabel}</div>`, {
+              .bindTooltip(`<div style="text-align: center; font-size: 12.5px; line-height: 1.35;"><div style="font-weight: 600; font-size: 13px; margin-bottom: 2px;">TGN-IA Segment 9</div><div style="color: #4b5563; margin-bottom: 4px;">${segmentLengthLabel}</div><div style="color: #111827;">${segmentEventLabel}</div></div>`, {
                 permanent: false,
                 direction: 'top',
                 offset: [0, -10],

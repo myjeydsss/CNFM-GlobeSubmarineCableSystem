@@ -142,10 +142,13 @@ const styles = {
   },
   systemCard: (color: string) => ({
     background: 'rgba(0,0,0,0.25)',
-    p: 1,
+    px: 1.25,
+    py: 0.75,
     borderRadius: 14,
     boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
-    width: '280px',
+    width: 'fit-content',
+    minWidth: 'unset',
+    display: 'inline-flex',
     border: '1px solid rgba(255,255,255,0.12)',
     cursor: 'pointer',
     transition: 'all 0.2s ease-in-out',
@@ -281,8 +284,8 @@ const SystemCard: React.FC<{
       sx={{
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 0.75,
+        justifyContent: 'flex-start',
+        gap: 0.5,
         mb: 0.25
       }}
     >
@@ -297,15 +300,16 @@ const SystemCard: React.FC<{
       </Typography>
       <Box
         sx={{
-          minWidth: 64,
-          height: 30,
+          minWidth: 'auto',
+          width: 'fit-content',
+          height: 26,
           borderRadius: '999px',
           backgroundColor: 'rgba(255,255,255,0.18)',
           border: '1px solid rgba(255,255,255,0.28)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          px: 1.25
+          px: 0.75
         }}
       >
         <Typography
