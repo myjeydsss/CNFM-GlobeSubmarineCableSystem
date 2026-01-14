@@ -24,6 +24,12 @@ function SimulationEnvironment() {
         minHeight: '100vh'
       }}
     >
+      {/* Remove default focus outline on Leaflet maps across the simulation environment */}
+      <style>{`
+        .leaflet-container:focus {
+          outline: none !important;
+        }
+      `}</style>
       <Helmet>
         <title>Simulation Dashboard</title>
       </Helmet>
@@ -78,13 +84,15 @@ function SimulationEnvironment() {
                 borderRadius: '12px' // Added border radius
               }}
             >
-              <Box sx={{ 
-                position: 'relative', 
-                width: '100%', 
-                height: '100%',
-                borderRadius: '12px', // Match the card's border radius
-                overflow: 'hidden' // Ensure map respects the border radius
-              }}>
+              <Box
+                sx={{
+                  position: 'relative',
+                  width: '100%',
+                  height: '100%',
+                  borderRadius: '12px', // Match the card's border radius
+                  overflow: 'hidden' // Ensure map respects the border radius
+                }}
+              >
                 {/* Map Container */}
                 <Box sx={{ width: '100%', height: '100%' }}>
                   <SimulationMap mapRef={mapRef} />

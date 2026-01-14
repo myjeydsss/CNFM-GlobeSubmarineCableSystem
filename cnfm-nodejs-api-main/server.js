@@ -45,8 +45,8 @@ db.connect((err) => {
       database: "cnfm_dashboard"
     });
   } else {
-    console.log("✅ Connected to MySQL database successfully");
-  }
+  console.log("✅ Connected to MySQL database successfully");
+}
 });
 
 // Default Route
@@ -117,6 +117,188 @@ app.delete('/delete-cable-cuts', async (req, res) => {
   }
 });
 
+// API: Update an existing cable cut
+app.put('/cable-cuts/:cutId', async (req, res) => {
+  const { cutId } = req.params;
+  const {
+    distance,
+    cut_type,
+    fault_date,
+    latitude,
+    longitude,
+    depth,
+    cable_type,
+    point_a,
+    point_b,
+    source_table,
+    cable,
+    segment,
+    new_cut_id
+  } = req.body || {};
+
+  if (!cutId) {
+    return res.status(400).json({ success: false, message: 'cut_id is required' });
+  }
+
+  const fields = {
+    distance,
+    cut_type,
+    fault_date,
+    latitude,
+    longitude,
+    depth,
+    cable_type,
+    point_a,
+    point_b
+  };
+
+  const updates = [];
+  const values = [];
+
+  Object.entries(fields).forEach(([key, val]) => {
+    if (val !== undefined) {
+      updates.push(`${key} = ?`);
+      values.push(val);
+    }
+  });
+
+  // If changing the primary key, include it in the update set
+  if (new_cut_id) {
+    updates.push('cut_id = ?');
+    values.push(new_cut_id);
+  }
+
+  // If cable_type not provided, try to look it up similar to POST
+  if (cable_type === undefined) {
+    try {
+      let resolvedType = null;
+      const tableName = source_table || (cable && segment ? `${cable.replace('-', '_')}_rpl_${segment}` : null);
+      if (tableName) {
+        const isTgnTable = tableName.startsWith('tgnia_');
+        const distanceColumn = isTgnTable ? 'route_distance_cumm' : 'cable_cumulative_total';
+        if (isTgnTable) {
+          const afterQuery = `
+            SELECT cable_type, ${distanceColumn} as distance_value
+            FROM ${tableName}
+            WHERE ${distanceColumn} IS NOT NULL
+              AND ${distanceColumn} != ''
+              AND ${distanceColumn} != 'CUMM.'
+              AND ${distanceColumn} + 0 = ${distanceColumn}
+              AND ${distanceColumn} + 0 >= ?
+              AND cable_type IS NOT NULL
+              AND cable_type != ''
+              AND cable_type != 'TYPE '
+              AND cable_type != 'CABLE'
+            ORDER BY (${distanceColumn} + 0) ASC
+            LIMIT 1
+          `;
+          const beforeQuery = `
+            SELECT cable_type, ${distanceColumn} as distance_value
+            FROM ${tableName}
+            WHERE ${distanceColumn} IS NOT NULL
+              AND ${distanceColumn} != ''
+              AND ${distanceColumn} != 'CUMM.'
+              AND ${distanceColumn} + 0 = ${distanceColumn}
+              AND ${distanceColumn} + 0 <= ?
+              AND cable_type IS NOT NULL
+              AND cable_type != ''
+              AND cable_type != 'TYPE '
+              AND cable_type != 'CABLE'
+            ORDER BY (${distanceColumn} + 0) DESC
+            LIMIT 1
+          `;
+          const [afterResult, beforeResult] = await Promise.all([
+            new Promise((resolve, reject) => {
+              db.query(afterQuery, [distance], (err, results) => {
+                if (err) reject(err);
+                else resolve(results);
+              });
+            }),
+            new Promise((resolve, reject) => {
+              db.query(beforeQuery, [distance], (err, results) => {
+                if (err) reject(err);
+                else resolve(results);
+              });
+            })
+          ]);
+          const afterCut = afterResult && afterResult.length ? afterResult[0] : null;
+          const beforeCut = beforeResult && beforeResult.length ? beforeResult[0] : null;
+          if (beforeCut && parseFloat(beforeCut.distance_value) === parseFloat(distance)) {
+            resolvedType = beforeCut.cable_type;
+          } else {
+            resolvedType = afterCut?.cable_type || beforeCut?.cable_type || null;
+          }
+        } else {
+          const lookupQuery = `
+            SELECT cable_type, ${distanceColumn} as distance_value
+            FROM ${tableName}
+            WHERE ${distanceColumn} IS NOT NULL
+            ORDER BY ABS(${distanceColumn} - ?)
+            LIMIT 2
+          `;
+          const result = await new Promise((resolve, reject) => {
+            db.query(lookupQuery, [distance], (err, results) => {
+              if (err) reject(err);
+              else resolve(results);
+            });
+          });
+          if (result && result.length) {
+            const closest = result[0];
+            const secondClosest = result[1];
+            resolvedType = closest?.cable_type || secondClosest?.cable_type || null;
+          }
+        }
+      }
+      if (resolvedType) {
+        updates.push('cable_type = ?');
+        values.push(resolvedType);
+      }
+    } catch (err) {
+      console.warn('Cable type lookup failed during update:', err?.message);
+    }
+  }
+
+  if (!updates.length) {
+    return res.status(400).json({
+      success: false,
+      message: 'No fields provided to update.'
+    });
+  }
+
+  values.push(cutId);
+
+  const query = `UPDATE cable_cuts SET ${updates.join(', ')} WHERE cut_id = ?`;
+
+  try {
+    const result = await new Promise((resolve, reject) => {
+      db.query(query, values, (err, results) => {
+        if (err) reject(err);
+        else resolve(results);
+      });
+    });
+
+    if (!result || result.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Cable cut not found.'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Cable cut updated successfully.',
+      affectedRows: result.affectedRows
+    });
+  } catch (err) {
+    console.error('Error updating cable cut:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update cable cut.',
+      error: err.message
+    });
+  }
+});
+
 // API: Get all cable cuts data
 app.get('/fetch-cable-cuts', (req, res) => {
   const query = `
@@ -133,6 +315,44 @@ app.get('/fetch-cable-cuts', (req, res) => {
   });
 });
 
+// API: Get a single cable cut by id
+app.get('/cable-cuts/:cutId', (req, res) => {
+  const { cutId } = req.params;
+  if (!cutId) {
+    return res.status(400).json({ error: 'cutId is required' });
+  }
+  const trimmedId = cutId.trim();
+  const query = 'SELECT * FROM cable_cuts WHERE TRIM(cut_id) = ? LIMIT 1';
+
+  db.query(query, [trimmedId], (err, results) => {
+    if (err) {
+      console.error('Error fetching cable cut:', err);
+      return res.status(500).json({ error: 'Failed to fetch cable cut' });
+    }
+    if (results && results.length) {
+      return res.json(results[0]);
+    }
+
+    // Fallback: try a LIKE match to tolerate minor differences (e.g., case or stray spaces)
+    db.query(
+      'SELECT * FROM cable_cuts WHERE cut_id LIKE ? LIMIT 1',
+      [trimmedId],
+      (fallbackErr, fallbackResults) => {
+        if (fallbackErr) {
+          console.error('Error in fallback cable cut lookup:', fallbackErr);
+          return res
+            .status(500)
+            .json({ error: 'Failed to fetch cable cut (fallback)' });
+        }
+        if (fallbackResults && fallbackResults.length) {
+          return res.json(fallbackResults[0]);
+        }
+        return res.status(404).json({ error: 'Cable cut not found' });
+      }
+    );
+  });
+});
+
 // ✅ Define your allowed segment tables
 const segmentTables = [
   'sea_us_rpl_s1', 'sea_us_rpl_s2', 'sea_us_rpl_s3', 'sea_us_rpl_s4', 'sea_us_rpl_s5', 'sea_us_rpl_s6',
@@ -145,7 +365,21 @@ const segmentTables = [
 
 // API: Insert all cable cuts data
 app.post('/cable-cuts', async (req, res) => {
-  const { cut_id, distance, cut_type, fault_date, simulated, latitude, longitude, depth, source_table, cable, segment } = req.body;
+  const {
+    cut_id,
+    distance,
+    cut_type,
+    fault_date,
+    simulated,
+    latitude,
+    longitude,
+    depth,
+    source_table,
+    cable,
+    segment,
+    point_a,
+    point_b
+  } = req.body;
 
   try {
     let cable_type = null;
@@ -258,8 +492,32 @@ app.post('/cable-cuts', async (req, res) => {
     }
 
     // Always include cable_type; default to 'Unknown' if missing
-    const fields = ['cut_id', 'distance', 'cut_type', 'fault_date', 'simulated', 'latitude', 'longitude', 'depth', 'cable_type'];
-    const values = [cut_id, distance, cut_type, fault_date, simulated, latitude, longitude, depth, cable_type || 'Unknown'];
+    const fields = [
+      'cut_id',
+      'distance',
+      'cut_type',
+      'fault_date',
+      'simulated',
+      'latitude',
+      'longitude',
+      'depth',
+      'cable_type',
+      'point_a',
+      'point_b'
+    ];
+    const values = [
+      cut_id,
+      distance,
+      cut_type,
+      fault_date,
+      simulated,
+      latitude,
+      longitude,
+      depth,
+      cable_type || 'Unknown',
+      point_a || null,
+      point_b || null
+    ];
 
     const placeholders = fields.map(() => '?').join(', ');
     const query = `INSERT INTO cable_cuts (${fields.join(', ')}) VALUES (${placeholders})`;

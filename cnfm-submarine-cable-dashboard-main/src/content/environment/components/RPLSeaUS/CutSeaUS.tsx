@@ -76,6 +76,42 @@ const SEGMENTS: SegmentData[] = [
   }
 ];
 
+const SEA_US_MIRROR_RULES: Record<
+  string,
+  Record<string, { a: boolean; b: boolean }>
+> = {
+  S1: {
+    S2: { a: false, b: true },
+    S3: { a: false, b: true },
+    S4: { a: false, b: false },
+    S5: { a: false, b: true }
+  },
+  S2: {
+    S1: { a: false, b: true },
+    S3: { a: false, b: true },
+    S4: { a: false, b: false },
+    S5: { a: false, b: true }
+  },
+  S3: {
+    S1: { a: false, b: true },
+    S2: { a: false, b: true },
+    S4: { a: true, b: false },
+    S5: { a: true, b: true }
+  },
+  S4: {
+    S1: { a: true, b: true },
+    S2: { a: true, b: true },
+    S3: { a: true, b: false },
+    S5: { a: false, b: true }
+  },
+  S5: {
+    S1: { a: false, b: true },
+    S2: { a: false, b: true },
+    S3: { a: false, b: false },
+    S4: { a: false, b: true }
+  }
+};
+
 const parseNumber = (value: any): number | null => {
   const n = parseFloat(value);
   return Number.isFinite(n) ? n : null;
@@ -125,10 +161,14 @@ const CutSeaUS: React.FC = () => {
     severity: 'info'
   });
   const [distanceError, setDistanceError] = useState<string>('');
+  const [editingCutId, setEditingCutId] = useState<string | null>(null);
 
   const apiBaseUrl = process.env.REACT_APP_API_BASE_URL || 'http://localhost';
   const port = process.env.REACT_APP_PORT || ':8081';
   const { refetch: refetchDeletedCables } = useDeletedCables();
+
+  const getSegmentLabel = (id: string) =>
+    SEGMENTS.find((s) => s.id === id)?.label || id || 'Unknown';
 
   useEffect(() => {
     map.attributionControl.remove();
@@ -145,6 +185,61 @@ const CutSeaUS: React.FC = () => {
       Object.values(cutMarkersRef.current).forEach((m) => map.removeLayer(m));
     };
   }, [map]);
+
+  // Prefill edit mode when arriving with mode=edit&cutId&sim=seaus
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mode = params.get('mode');
+    const cutId = params.get('cutId');
+    const sim = params.get('sim');
+
+    if (mode === 'edit' && cutId && sim === 'seaus') {
+      setEditingCutId(cutId);
+      const loadCut = async () => {
+        try {
+          const res = await fetch(`${apiBaseUrl}${port}/cable-cuts/${cutId}`);
+          if (!res.ok) {
+            console.warn('Edit mode: cut not found, exiting edit mode.');
+            setEditingCutId(null);
+            return;
+          }
+          const data = await res.json();
+          if (!data) {
+            setEditingCutId(null);
+            return;
+          }
+
+          const parseSeg = (label: string | undefined) => {
+            if (!label) return '';
+            const token = label.trim().split(' ')[0];
+            return token || '';
+          };
+
+          const segA = parseSeg(data.point_a);
+          const segB = parseSeg(data.point_b);
+          if (segA) setStartSegment(segA);
+          if (segB) setEndSegment(segB);
+
+          if (data.distance !== undefined && data.distance !== null) {
+            setTargetKm(Number(data.distance) || 0);
+            setTargetKmInput(String(data.distance));
+          }
+          if (data.cut_type) setCutType(data.cut_type);
+          if (data.fault_date) {
+            const [datePart, timePart] = String(data.fault_date).split('T');
+            if (datePart) setFaultDate(datePart);
+            if (timePart) setFaultTime(timePart.slice(0, 5));
+          }
+          // Open dialog once data is loaded
+          setOpen(true);
+        } catch (err) {
+          console.error('Failed to preload cut data', err);
+          setEditingCutId(null);
+        }
+      };
+      loadCut();
+    }
+  }, [apiBaseUrl, port, location.search]);
 
   // Fetch all segment routes
   useEffect(() => {
@@ -220,14 +315,25 @@ const CutSeaUS: React.FC = () => {
     return pts[pts.length - 1].km;
   };
 
+  const pathSegments = useMemo(() => {
+    const ids = SEGMENTS.map((s) => s.id);
+    const startIdx = ids.indexOf(startSegment);
+    if (startIdx === -1) return [];
+    if (!endSegment || startSegment === endSegment) return [startSegment];
+    const endIdx = ids.indexOf(endSegment);
+    if (endIdx === -1) return [startSegment];
+    const from = Math.min(startIdx, endIdx);
+    const to = Math.max(startIdx, endIdx);
+    const slice = ids.slice(from, to + 1);
+    return startIdx <= endIdx ? slice : slice.reverse();
+  }, [startSegment, endSegment]);
+
   const totalSpan = useMemo(() => {
-    const lenA = startSegment ? getSegmentLength(startSegment) : 0;
-    const lenB =
-      startSegment && endSegment && startSegment !== endSegment
-        ? getSegmentLength(endSegment)
-        : 0;
-    return lenA + lenB;
-  }, [startSegment, endSegment, routes]);
+    return pathSegments.reduce(
+      (sum, segId) => sum + getSegmentLength(segId),
+      0
+    );
+  }, [pathSegments, routes]);
 
   useEffect(() => {
     // Reset to start of span when selection or data changes
@@ -273,13 +379,18 @@ const CutSeaUS: React.FC = () => {
   };
 
   const resolveSegmentForKm = (km: number) => {
-    if (!startSegment) return null;
-    const lenA = getSegmentLength(startSegment);
-    if (!endSegment || startSegment === endSegment || km <= lenA) {
-      return { segmentId: startSegment, localKm: km };
+    if (!pathSegments.length) return null;
+    let remaining = km;
+
+    for (let i = 0; i < pathSegments.length; i++) {
+      const segId = pathSegments[i];
+      const segLen = getSegmentLength(segId);
+      if (remaining <= segLen || i === pathSegments.length - 1) {
+        return { segmentId: segId, localKm: remaining };
+      }
+      remaining -= segLen;
     }
-    const localKm = km - lenA;
-    return { segmentId: endSegment, localKm };
+    return null;
   };
 
   const getNearestCableType = (
@@ -343,47 +454,25 @@ const CutSeaUS: React.FC = () => {
   };
 
   const shouldMirrorSegment = (segmentId: string, a: string, b: string) => {
-    // Only apply matrix for S1-S5; S6 and unknowns remain normal
-    const mirrorMap: Record<string, Record<string, { a: boolean; b: boolean }>> =
-      {
-        S1: {
-          S2: { a: false, b: true },
-          S3: { a: false, b: true },
-          S4: { a: false, b: false },
-          S5: { a: false, b: true }
-        },
-        S2: {
-          S1: { a: false, b: true },
-          S3: { a: false, b: true },
-          S4: { a: false, b: false },
-          S5: { a: false, b: true }
-        },
-        S3: {
-          S1: { a: false, b: true },
-          S2: { a: false, b: true },
-          S4: { a: true, b: false },
-          S5: { a: true, b: true }
-        },
-        S4: {
-          S1: { a: true, b: true },
-          S2: { a: true, b: true },
-          S3: { a: true, b: false },
-          S5: { a: false, b: true }
-        },
-        S5: {
-          S1: { a: false, b: true },
-          S2: { a: false, b: true },
-          S3: { a: false, b: false },
-          S4: { a: false, b: true }
-        }
-      };
-
-    const rulesForA = mirrorMap[a];
+    const rulesForA = SEA_US_MIRROR_RULES[a];
     const pairRule = rulesForA ? rulesForA[b] : undefined;
     if (!pairRule) return false;
     if (segmentId === a) return pairRule.a;
     if (segmentId === b) return pairRule.b;
     return false;
+  };
+
+  const isSegmentMirrored = (segmentId: string) => {
+    if (!startSegment) return false;
+    // Keep existing endpoint logic
+    if (startSegment && endSegment) {
+      if (segmentId === startSegment || segmentId === endSegment) {
+        return shouldMirrorSegment(segmentId, startSegment, endSegment);
+      }
+    }
+    // Apply start-to-segment rule for intermediate path members
+    const rule = SEA_US_MIRROR_RULES[startSegment]?.[segmentId];
+    return rule ? rule.b : false;
   };
 
   const interpolatePoint = (
@@ -398,7 +487,7 @@ const CutSeaUS: React.FC = () => {
 
     const segLen = getSegmentLength(segmentId);
     const kmClamped = Math.min(Math.max(km, 0), segLen);
-    const shouldMirror = shouldMirrorSegment(segmentId, startSegment, endSegment);
+    const shouldMirror = isSegmentMirrored(segmentId);
     const kmForLookup = shouldMirror
       ? Math.max(0, segLen - kmClamped)
       : kmClamped;
@@ -451,6 +540,8 @@ const CutSeaUS: React.FC = () => {
       cutType: string;
       faultDate: string;
       cableType: string | null;
+      pointA?: string;
+      pointB?: string;
     }
   ) => {
     if (!map || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
@@ -495,6 +586,12 @@ const CutSeaUS: React.FC = () => {
         </div>
         <div style="background:white; padding:12px;">
           <table style="width:100%; font-size:13px; border-collapse:collapse;">
+            <tr><td style="font-weight:700; padding:6px 0;">Point A:</td><td style="text-align:right; padding:6px 0;">${
+              info.pointA || 'Unknown'
+            }</td></tr>
+            <tr><td style="font-weight:700; padding:6px 0;">Point B:</td><td style="text-align:right; padding:6px 0;">${
+              info.pointB || 'Unknown'
+            }</td></tr>
             <tr><td style="font-weight:700; padding:6px 0;">Distance:</td><td style="text-align:right; padding:6px 0;">${info.distance.toFixed(
               3
             )} km</td></tr>
@@ -600,11 +697,19 @@ const CutSeaUS: React.FC = () => {
     const cutId = `seaus${segNum}-${Date.now()}`;
     const depth = point.depth ?? 'Unknown';
     const cableType = point.cableType ?? 'Unknown';
+    const pointALabel = getSegmentLabel(startSegment);
+    const pointBLabel = getSegmentLabel(endSegment);
 
     const combinedFaultDate = combineDateTime(faultDate, faultTime);
 
-    const payload = {
-      cut_id: cutId,
+    const desiredPrefix = `seaus${segNum}`;
+    const shouldRename =
+      editingCutId && !editingCutId.startsWith(desiredPrefix);
+    const finalCutId = shouldRename
+      ? `${desiredPrefix}-${Date.now()}`
+      : editingCutId || cutId;
+    const payload: any = {
+      cut_id: finalCutId,
       distance: Number(bounded.toFixed(3)),
       cut_type: cutType,
       fault_date: combinedFaultDate,
@@ -614,15 +719,22 @@ const CutSeaUS: React.FC = () => {
       depth,
       cable_type: cableType,
       cableType,
-      cable: 'sea-us',
-      segment: `s${segNum}`,
-      source_table: `sea_us_rpl_s${segNum}`
+      point_a: pointALabel,
+      point_b: pointBLabel
     };
+    payload.cable = 'sea-us';
+    payload.segment = `s${segNum}`;
+    payload.source_table = `sea_us_rpl_s${segNum}`;
+    if (shouldRename) payload.new_cut_id = finalCutId;
 
     setSubmitting(true);
     try {
-      const res = await fetch(`${apiBaseUrl}${port}/cable-cuts`, {
-        method: 'POST',
+      const url = editingCutId
+        ? `${apiBaseUrl}${port}/cable-cuts/${finalCutId}`
+        : `${apiBaseUrl}${port}/cable-cuts`;
+      const method = editingCutId ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
@@ -641,12 +753,14 @@ const CutSeaUS: React.FC = () => {
         setSubmitting(false);
         return;
       }
-      addMarkerToMap(cutId, point.lat, point.lng, {
+      addMarkerToMap(finalCutId, point.lat, point.lng, {
         distance: payload.distance,
         depth: depth,
         cutType: cutType,
         faultDate: payload.fault_date,
-        cableType: cableType
+        cableType: cableType,
+        pointA: pointALabel,
+        pointB: pointBLabel
       });
       refetchDeletedCables();
       setToast({
@@ -671,8 +785,6 @@ const CutSeaUS: React.FC = () => {
     () => Object.keys(routes).length === SEGMENTS.length,
     [routes]
   );
-  const lenA = getSegmentLength(startSegment);
-  const lenB = startSegment === endSegment ? 0 : getSegmentLength(endSegment);
 
   const loadingContent = (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
@@ -755,14 +867,6 @@ const CutSeaUS: React.FC = () => {
                 <Typography variant="body2" sx={{ fontWeight: 600 }}>
                   Target Distance (km)
                 </Typography>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography variant="caption" color="text.secondary">
-                    Point A length: {lenA ? `${lenA.toFixed(3)} km` : '--'}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Point B length: {lenB ? `${lenB.toFixed(3)} km` : '--'}
-                  </Typography>
-                </Box>
                 <TextField
                   label="Target Distance (km)"
                   type="number"
@@ -859,6 +963,7 @@ const CutSeaUS: React.FC = () => {
                 </MenuItem>
                 <MenuItem value="Fiber Break">Fiber Break</MenuItem>
                 <MenuItem value="Full Cut">Full Cut</MenuItem>
+                <MenuItem value="Unclassified">Unclassified</MenuItem>
               </TextField>
             </Box>
           )}

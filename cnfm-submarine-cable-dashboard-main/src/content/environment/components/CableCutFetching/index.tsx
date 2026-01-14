@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDeleteCable } from '../../../../hooks/useApi';
 import {
   Dialog,
@@ -10,8 +10,10 @@ import {
   DialogContentText,
   DialogActions,
   Button,
+  TextField,
   Snackbar,
-  Alert
+  Alert,
+  MenuItem
 } from '@mui/material';
 
 type MarkerData = {
@@ -24,6 +26,8 @@ type MarkerData = {
   simulated: string;
   fault_date?: string;
   cable_type?: string; // <-- Add this
+  pointA?: string;
+  pointB?: string;
 };
 
 type CableCutMarkersProps = {
@@ -97,25 +101,53 @@ function CableCutMarkers({ cableSegment }: CableCutMarkersProps) {
   const removeMarker = (cutId: string) => openDeleteDialog(cutId);
 
   // Confirmation dialog state for deleting markers (mirrors DeletedCablesSidebar flow)
-  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; cutId: string | null }>({
+  const [deleteDialog, setDeleteDialog] = useState<{
+    open: boolean;
+    cutId: string | null;
+  }>({
     open: false,
     cutId: null
   });
 
-  const [notification, setNotification] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' | 'warning' }>({
+  const [notification, setNotification] = useState<{
+    open: boolean;
+    message: string;
+    severity: 'success' | 'error' | 'info' | 'warning';
+  }>({
     open: false,
     message: '',
     severity: 'info'
   });
 
-  const showNotification = (message: string, severity: 'success' | 'error' | 'info' | 'warning' = 'info') => {
+  const showNotification = (
+    message: string,
+    severity: 'success' | 'error' | 'info' | 'warning' = 'info'
+  ) => {
     setNotification({ open: true, message, severity });
   };
 
-  const hideNotification = () => setNotification(prev => ({ ...prev, open: false }));
+  const hideNotification = () =>
+    setNotification((prev) => ({ ...prev, open: false }));
 
-  const openDeleteDialog = (cutId: string) => setDeleteDialog({ open: true, cutId });
+  const openDeleteDialog = (cutId: string) =>
+    setDeleteDialog({ open: true, cutId });
   const closeDeleteDialog = () => setDeleteDialog({ open: false, cutId: null });
+
+  // Edit dialog state (only updates date/time/cable_type)
+  const [editDialog, setEditDialog] = useState<{
+    open: boolean;
+    cutId: string | null;
+    date: string;
+    time: string;
+    cutType: string;
+  }>({
+    open: false,
+    cutId: null,
+    date: '',
+    time: '',
+    cutType: ''
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const handleConfirmDelete = async () => {
     const cutId = deleteDialog.cutId;
@@ -135,9 +167,13 @@ function CableCutMarkers({ cableSegment }: CableCutMarkersProps) {
       try {
         if (m) {
           if (typeof m._customEventCleanup === 'function') {
-            try { m._customEventCleanup(); } catch (e) { /* ignore */ }
+            try {
+              m._customEventCleanup();
+            } catch (e) {
+              /* ignore */
+            }
           }
-          if (typeof (m.closePopup) === 'function') {
+          if (typeof m.closePopup === 'function') {
             m.closePopup();
           }
           map.removeLayer(m);
@@ -183,7 +219,9 @@ function CableCutMarkers({ cableSegment }: CableCutMarkersProps) {
     return cutsRaw
       .filter(
         (item: any) =>
-          item.cut_id && typeof item.cut_id === 'string' && item.cut_id.includes(cableSegment)
+          item.cut_id &&
+          typeof item.cut_id === 'string' &&
+          item.cut_id.includes(cableSegment)
       )
       .map((item: any) => ({
         latitude: item.latitude,
@@ -194,7 +232,9 @@ function CableCutMarkers({ cableSegment }: CableCutMarkersProps) {
         depth: item.depth,
         simulated: item.simulated,
         fault_date: item.fault_date,
-        cable_type: item.cable_type
+        cable_type: item.cable_type,
+        pointA: item.point_a || item.pointA || 'Unknown',
+        pointB: item.point_b || item.pointB || 'Unknown'
       }));
   }, [cutsRaw, cableSegment]);
 
@@ -229,7 +269,7 @@ function CableCutMarkers({ cableSegment }: CableCutMarkersProps) {
         existingMarker.getLatLng().lat !== markerData.latitude ||
         existingMarker.getLatLng().lng !== markerData.longitude ||
         existingMarker.options.icon?.options.className !==
-        `cut-marker-${markerData.cut_type}-${cableSegment}`;
+          `cut-marker-${markerData.cut_type}-${cableSegment}`;
 
       // Only recreate marker if it doesn't exist or data has changed
       if (hasDataChanged) {
@@ -274,17 +314,33 @@ function CableCutMarkers({ cableSegment }: CableCutMarkersProps) {
 
         // --- Restore hover popup functionality ---
         // Format date/time
-        const dateObj = markerData.fault_date ? new Date(markerData.fault_date) : null;
-        const dateStr = dateObj && !isNaN(dateObj.getTime())
-          ? new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(dateObj)
-          : 'Unknown';
-        const hasTime = markerData.fault_date ? markerData.fault_date.includes('T') : false;
-        const timeStr = dateObj && !isNaN(dateObj.getTime()) && hasTime
-          ? new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(dateObj)
-          : '--';
+        const dateObj = markerData.fault_date
+          ? new Date(markerData.fault_date)
+          : null;
+        const dateStr =
+          dateObj && !isNaN(dateObj.getTime())
+            ? new Intl.DateTimeFormat(undefined, {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric'
+              }).format(dateObj)
+            : 'Unknown';
+        const hasTime = markerData.fault_date
+          ? markerData.fault_date.includes('T')
+          : false;
+        const timeStr =
+          dateObj && !isNaN(dateObj.getTime()) && hasTime
+            ? new Intl.DateTimeFormat(undefined, {
+                hour: '2-digit',
+                minute: '2-digit'
+              }).format(dateObj)
+            : '--';
         // Safely format distance
         let distanceStr = 'N/A';
-        if (typeof markerData.distance === 'number' && !isNaN(markerData.distance)) {
+        if (
+          typeof markerData.distance === 'number' &&
+          !isNaN(markerData.distance)
+        ) {
           distanceStr = markerData.distance.toFixed(2) + ' km';
         } else if (typeof markerData.distance === 'string') {
           const distStr = markerData.distance as string;
@@ -301,31 +357,52 @@ function CableCutMarkers({ cableSegment }: CableCutMarkersProps) {
           'Full Cut': '#c62828'
         };
         const headerColor = headerColors[markerData.cut_type] || '#c62828';
-        const headerText = markerData.cut_type ? markerData.cut_type.toUpperCase() : 'FULL CUT';
+        const headerText = markerData.cut_type
+          ? markerData.cut_type.toUpperCase()
+          : 'FULL CUT';
+
+        const endpointsLabel = `${markerData.pointA || 'Unknown'} \u2192 ${
+          markerData.pointB || 'Unknown'
+        }`;
 
         // Popup HTML content (table-based design matching requested layout)
         const popupHtml = `
-      <div class="cable-cut-popup" style="font-family: Arial, sans-serif; width: 200px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); border-radius: 5px; overflow: hidden; border: 2px solid ${markerStyle.color};">
-        <div style="background-color: ${markerStyle.color}; color: white; padding: 6px; text-align: center; font-weight: bold; font-size: 13px; letter-spacing: 0.3px; text-shadow: 1px 1px 2px rgba(0,0,0,0.3);">
-          ${markerData.cut_type ? markerData.cut_type.toUpperCase() : 'FULL CUT'}
+      <div class="cable-cut-popup" style="font-family: Arial, sans-serif; width: 200px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); border-radius: 5px; overflow: hidden; border: 2px solid ${
+        markerStyle.color
+      };">
+        <div style="background-color: ${
+          markerStyle.color
+        }; color: white; padding: 6px; text-align: center; font-weight: bold; font-size: 13px; letter-spacing: 0.3px; text-shadow: 1px 1px 2px rgba(0,0,0,0.3);">
+          ${
+            markerData.cut_type ? markerData.cut_type.toUpperCase() : 'FULL CUT'
+          }
         </div>
         <div style="background-color: white; padding: 10px;">
           <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+            <tr>
+              <td colspan="2" style="padding-bottom: 8px; font-weight: bold; text-align: center;">${endpointsLabel}</td>
+            </tr>
             <tr>
               <td style="font-weight: bold; padding-bottom: 5px; color: #333;">Distance:</td>
               <td style="text-align: right; padding-bottom: 5px; color: #666;">${distanceStr}</td>
             </tr>
             <tr>
               <td style="font-weight: bold; padding-bottom: 5px; color: #333;">Depth:</td>
-              <td style="text-align: right; padding-bottom: 5px; color: #666;">${Number(depth || 0).toFixed(1)} m</td>
+              <td style="text-align: right; padding-bottom: 5px; color: #666;">${Number(
+                depth || 0
+              ).toFixed(1)} m</td>
             </tr>
             <tr>
               <td style="font-weight: bold; padding-bottom: 5px; color: #333;">Lat:</td>
-              <td style="text-align: right; padding-bottom: 5px; color: #666; font-family: monospace; font-size: 11px;">${Number(markerData.latitude).toFixed(4)}</td>
+              <td style="text-align: right; padding-bottom: 5px; color: #666; font-family: monospace; font-size: 11px;">${Number(
+                markerData.latitude
+              ).toFixed(4)}</td>
             </tr>
             <tr>
               <td style="font-weight: bold; padding-bottom: 5px; color: #333;">Lng:</td>
-              <td style="text-align: right; padding-bottom: 5px; color: #666; font-family: monospace; font-size: 11px;">${Number(markerData.longitude).toFixed(4)}</td>
+              <td style="text-align: right; padding-bottom: 5px; color: #666; font-family: monospace; font-size: 11px;">${Number(
+                markerData.longitude
+              ).toFixed(4)}</td>
             </tr>
             <tr>
               <td style="font-weight: bold; padding-bottom: 5px; color: #333;">Date:</td>
@@ -337,23 +414,34 @@ function CableCutMarkers({ cableSegment }: CableCutMarkersProps) {
             </tr>
             <tr>
               <td style="font-weight: bold; padding-bottom: 5px; color: #333;">Cable Type:</td>
-              <td style="text-align: right; padding-bottom: 5px; color: #666; font-size: 11px;">${markerData.cable_type || 'Unknown'}</td>
+              <td style="text-align: right; padding-bottom: 5px; color: #666; font-size: 11px;">${
+                markerData.cable_type || 'Unknown'
+              }</td>
             </tr>
           </table>
         </div>
-        ${canDelete ? `
+        ${
+          canDelete
+            ? `
         <div style="background-color: #f8f9fa; padding: 10px; border-top: 1px solid #dee2e6; display: flex; flex-direction: column; gap: 6px;">
+          <button id="edit-cut-${markerId}" class="edit-marker-btn" onclick="(function(){const e=new CustomEvent('popupEditCable',{detail:{cutId:'${markerId}'}});document.dispatchEvent(e);})();" style="background-color: #0d6efd; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; width: 100%; transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">✎ Edit</button>
           <button id="delete-cut-${markerId}" class="delete-marker-btn" onclick="(function(){const e=new CustomEvent('popupDeleteCable',{detail:{cutId:'${markerId}'}});document.dispatchEvent(e);})();" style="background-color: #dc3545; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; width: 100%; transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">🗑️ Delete</button>
           <button id="close-cut-${markerId}" class="close-popup-btn" onclick="(function(){const e=new CustomEvent('popupClose');document.dispatchEvent(e);})();" style="background-color: #6c757d; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; width: 100%; transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">✕ Close</button>
         </div>
-        ` : `
+        `
+            : `
         <div style="background-color: #f8f9fa; padding: 10px; border-top: 1px solid #dee2e6;">
           <button id="close-cut-${markerId}" class="close-popup-btn" onclick="(function(){const e=new CustomEvent('popupClose');document.dispatchEvent(e);})();" style="background-color: #6c757d; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; width: 100%; transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">✕ Close</button>
         </div>
-        `}
+        `
+        }
       </div>
     `;
-        marker.bindPopup(popupHtml, { closeButton: false, autoPan: true, className: 'cnfm-cut-popup' });
+        marker.bindPopup(popupHtml, {
+          closeButton: false,
+          autoPan: true,
+          className: 'cnfm-cut-popup'
+        });
 
         // Open popup on hover, close after a short delay on mouseout so users can move
         // cursor between marker and popup without it disappearing instantly.
@@ -376,6 +464,14 @@ function CableCutMarkers({ cableSegment }: CableCutMarkersProps) {
         // Handle Delete and Close button clicks, and attach hover listeners to popup
         marker.on('popupopen', function () {
           if (canDelete) {
+            const editBtn = document.getElementById(`edit-cut-${markerId}`);
+            if (editBtn) {
+              editBtn.onclick = (e) => {
+                e.preventDefault();
+                openEditDialog(markerData);
+                marker.closePopup();
+              };
+            }
             const deleteBtn = document.getElementById(`delete-cut-${markerId}`);
             if (deleteBtn) {
               deleteBtn.onclick = (e) => {
@@ -396,8 +492,14 @@ function CableCutMarkers({ cableSegment }: CableCutMarkersProps) {
           // Attach hover enter/leave to popup element so it doesn't close when
           // moving cursor between marker and popup.
           try {
-            const popup = typeof (marker.getPopup) === 'function' ? marker.getPopup() : undefined;
-            const popupEl = popup && typeof (popup.getElement) === 'function' ? popup.getElement() : undefined;
+            const popup =
+              typeof marker.getPopup === 'function'
+                ? marker.getPopup()
+                : undefined;
+            const popupEl =
+              popup && typeof popup.getElement === 'function'
+                ? popup.getElement()
+                : undefined;
             if (popupEl) {
               const onPopupEnter = () => {
                 if (hoverCloseTimeoutsRef.current[markerId]) {
@@ -406,10 +508,13 @@ function CableCutMarkers({ cableSegment }: CableCutMarkersProps) {
                 }
               };
               const onPopupLeave = () => {
-                hoverCloseTimeoutsRef.current[markerId] = window.setTimeout(() => {
-                  marker.closePopup();
-                  hoverCloseTimeoutsRef.current[markerId] = null;
-                }, 300);
+                hoverCloseTimeoutsRef.current[markerId] = window.setTimeout(
+                  () => {
+                    marker.closePopup();
+                    hoverCloseTimeoutsRef.current[markerId] = null;
+                  },
+                  300
+                );
               };
 
               popupEl.addEventListener('mouseenter', onPopupEnter);
@@ -463,6 +568,14 @@ function CableCutMarkers({ cableSegment }: CableCutMarkersProps) {
           }
         };
 
+        const handlePopupEditEvent = (event: CustomEvent) => {
+          const cutId = event.detail?.cutId;
+          if (cutId === markerId) {
+            openEditDialog(markerData);
+            marker.closePopup();
+          }
+        };
+
         const handlePopupCloseEvent = () => {
           try {
             marker.closePopup();
@@ -471,11 +584,25 @@ function CableCutMarkers({ cableSegment }: CableCutMarkersProps) {
           }
         };
 
-        document.addEventListener('popupDeleteCable', handlePopupDeleteEvent as EventListener);
+        document.addEventListener(
+          'popupDeleteCable',
+          handlePopupDeleteEvent as EventListener
+        );
+        document.addEventListener(
+          'popupEditCable',
+          handlePopupEditEvent as EventListener
+        );
         document.addEventListener('popupClose', handlePopupCloseEvent);
 
         (marker as any)._customEventCleanup = () => {
-          document.removeEventListener('popupDeleteCable', handlePopupDeleteEvent as EventListener);
+          document.removeEventListener(
+            'popupDeleteCable',
+            handlePopupDeleteEvent as EventListener
+          );
+          document.removeEventListener(
+            'popupEditCable',
+            handlePopupEditEvent as EventListener
+          );
           document.removeEventListener('popupClose', handlePopupCloseEvent);
         };
       }
@@ -548,6 +675,68 @@ function CableCutMarkers({ cableSegment }: CableCutMarkersProps) {
     );
   };
 
+  const openEditDialog = (markerData: MarkerData) => {
+    const parsedDate = markerData.fault_date
+      ? new Date(markerData.fault_date)
+      : null;
+    const dateStr =
+      parsedDate && !isNaN(parsedDate.getTime())
+        ? parsedDate.toISOString().slice(0, 10)
+        : '';
+    const timeStr =
+      parsedDate && !isNaN(parsedDate.getTime())
+        ? parsedDate.toISOString().slice(11, 16)
+        : '';
+    setEditDialog({
+      open: true,
+      cutId: markerData.cut_id,
+      date: dateStr,
+      time: timeStr,
+      cutType: markerData.cut_type || ''
+    });
+  };
+
+  const closeEditDialog = () =>
+    setEditDialog({ open: false, cutId: null, date: '', time: '', cutType: '' });
+
+  const handleSaveEdit = async () => {
+    if (!editDialog.cutId) {
+      showNotification('Invalid cut id', 'error');
+      return;
+    }
+    setSavingEdit(true);
+    const combinedFaultDate = editDialog.date
+      ? `${editDialog.date}T${editDialog.time || '00:00'}`
+      : undefined;
+    try {
+      const res = await fetch(
+        `${apiBaseUrl}${port}/cable-cuts/${editDialog.cutId}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fault_date: combinedFaultDate,
+            cut_type: editDialog.cutType || undefined
+          })
+        }
+      );
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = result?.message || 'Failed to update cable cut';
+        showNotification(msg, 'error');
+      } else {
+        showNotification('Cable cut updated successfully', 'success');
+        queryClient.invalidateQueries({ queryKey: ['cableCuts', cableSegment] });
+        closeEditDialog();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to update cable cut';
+      showNotification(msg, 'error');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   return (
     <>
       {/* Dialog to confirm deletion from popup (mirrors DeletedCablesSidebar UX) */}
@@ -559,7 +748,10 @@ function CableCutMarkers({ cableSegment }: CableCutMarkersProps) {
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle id="delete-dialog-title" sx={{ color: '#d32f2f', fontWeight: 'bold' }}>
+        <DialogTitle
+          id="delete-dialog-title"
+          sx={{ color: '#d32f2f', fontWeight: 'bold' }}
+        >
           ⚠️ Confirm Cable Deletion
         </DialogTitle>
         <DialogContent>
@@ -571,17 +763,136 @@ function CableCutMarkers({ cableSegment }: CableCutMarkersProps) {
           </DialogContentText>
         </DialogContent>
         <DialogActions sx={{ p: 2, gap: 1 }}>
-          <Button onClick={closeDeleteDialog} variant="outlined" color="primary">
+          <Button
+            onClick={closeDeleteDialog}
+            variant="outlined"
+            color="primary"
+          >
             Cancel
           </Button>
-          <Button onClick={handleConfirmDelete} variant="contained" color="error">
+          <Button
+            onClick={handleConfirmDelete}
+            variant="contained"
+            color="error"
+          >
             Delete
           </Button>
         </DialogActions>
       </Dialog>
 
-      <Snackbar open={notification.open} autoHideDuration={6000} onClose={hideNotification} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
-        <Alert onClose={hideNotification} severity={notification.severity} sx={{ width: '100%' }}>
+      {/* Edit dialog: only date, time, cable type */}
+      <Dialog
+        open={editDialog.open}
+        onClose={closeEditDialog}
+        aria-labelledby="edit-dialog-title"
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle id="edit-dialog-title">Edit Cable Cut</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <TextField
+            label="Fault Date"
+            type="date"
+            fullWidth
+            sx={{ mt: 1 }}
+            value={editDialog.date}
+            onChange={(e) =>
+              setEditDialog((prev) => ({ ...prev, date: e.target.value }))
+            }
+            InputLabelProps={{
+              shrink: true,
+              sx: {
+                color: '#1f2937',
+                fontWeight: 600,
+                backgroundColor: '#fff',
+                px: 0.75,
+                borderRadius: 1,
+                transform: 'translate(12px, -10px) scale(0.9)',
+                zIndex: 1
+              }
+            }}
+            FormHelperTextProps={{ sx: { mt: 0 } }}
+          />
+          <TextField
+            label="Fault Time"
+            type="time"
+            fullWidth
+            value={editDialog.time}
+            onChange={(e) =>
+              setEditDialog((prev) => ({ ...prev, time: e.target.value }))
+            }
+            InputLabelProps={{
+              shrink: true,
+              sx: {
+                color: '#1f2937',
+                fontWeight: 600,
+                backgroundColor: '#fff',
+                px: 0.75,
+                borderRadius: 1,
+                transform: 'translate(12px, -10px) scale(0.9)',
+                zIndex: 1
+              }
+            }}
+            FormHelperTextProps={{ sx: { mt: 0 } }}
+          />
+          <TextField
+            label="Cut Type"
+            value={editDialog.cutType}
+            select
+            onChange={(e) =>
+              setEditDialog((prev) => ({ ...prev, cutType: e.target.value }))
+            }
+            fullWidth
+            InputLabelProps={{
+              shrink: true,
+              sx: {
+                color: '#1f2937',
+                fontWeight: 600,
+                backgroundColor: '#fff',
+                px: 0.75,
+                borderRadius: 1,
+                transform: 'translate(12px, -10px) scale(0.9)',
+                zIndex: 1
+              }
+            }}
+            FormHelperTextProps={{ sx: { mt: 0 } }}
+          >
+            <MenuItem value="" disabled>
+              Select cut type
+            </MenuItem>
+            <MenuItem value="Shunt Fault">Shunt Fault</MenuItem>
+            <MenuItem value="Partial Fiber Break">Partial Fiber Break</MenuItem>
+            <MenuItem value="Fiber Break">Fiber Break</MenuItem>
+            <MenuItem value="Full Cut">Full Cut</MenuItem>
+            <MenuItem value="Unclassified">Unclassified</MenuItem>
+          </TextField>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button onClick={closeEditDialog} variant="outlined">
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSaveEdit}
+            variant="contained"
+            disabled={savingEdit}
+          >
+            {savingEdit ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar
+        open={notification.open}
+        autoHideDuration={6000}
+        onClose={hideNotification}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={hideNotification}
+          severity={notification.severity}
+          variant="filled"
+          sx={{ width: '100%', borderRadius: 2 }}
+        >
           {notification.message}
         </Alert>
       </Snackbar>

@@ -122,10 +122,13 @@ const CutTGNIA: React.FC = () => {
     severity: 'info'
   });
   const [distanceError, setDistanceError] = useState<string>('');
+  const [editingCutId, setEditingCutId] = useState<string | null>(null);
 
   const apiBaseUrl = process.env.REACT_APP_API_BASE_URL || 'http://localhost';
   const port = process.env.REACT_APP_PORT || ':8081';
   const { refetch: refetchDeletedCables } = useDeletedCables();
+  const getSegmentLabel = (id: string) =>
+    SEGMENTS.find((s) => s.id === id)?.label || id || 'Unknown';
 
   useEffect(() => {
     map.attributionControl.remove();
@@ -142,6 +145,55 @@ const CutTGNIA: React.FC = () => {
       Object.values(cutMarkersRef.current).forEach((m) => map.removeLayer(m));
     };
   }, [map]);
+
+  // Prefill edit mode when arriving with mode=edit&cutId&sim=tgnia
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mode = params.get('mode');
+    const cutId = params.get('cutId');
+    const sim = params.get('sim');
+
+    if (mode === 'edit' && cutId && sim === 'tgnia') {
+      setEditingCutId(cutId);
+      const loadCut = async () => {
+        try {
+          const res = await fetch(`${apiBaseUrl}${port}/cable-cuts/${cutId}`);
+          if (!res.ok) {
+            console.warn('Edit mode: cut not found, exiting edit mode.');
+            setEditingCutId(null);
+            return;
+          }
+          const data = await res.json();
+          if (!data) return;
+
+          const parseSeg = (label: string | undefined) => {
+            if (!label) return '';
+            return label.trim().split(' ')[0] || '';
+          };
+          const segA = parseSeg(data.point_a);
+          const segB = parseSeg(data.point_b);
+          if (segA) setStartSegment(segA);
+          if (segB) setEndSegment(segB);
+
+          if (data.distance !== undefined && data.distance !== null) {
+            setTargetKm(Number(data.distance) || 0);
+            setTargetKmInput(String(data.distance));
+          }
+          if (data.cut_type) setCutType(data.cut_type);
+          if (data.fault_date) {
+            const [datePart, timePart] = String(data.fault_date).split('T');
+            if (datePart) setFaultDate(datePart);
+            if (timePart) setFaultTime(timePart.slice(0, 5));
+          }
+          setOpen(true);
+        } catch (err) {
+          console.error('Failed to preload cut data', err);
+          setEditingCutId(null);
+        }
+      };
+      loadCut();
+    }
+  }, [apiBaseUrl, port, location.search]);
 
   // Fetch all segment routes
   useEffect(() => {
@@ -212,20 +264,39 @@ const CutTGNIA: React.FC = () => {
   }, [apiBaseUrl, port]);
 
   const getSegmentLength = (segmentId: string) => {
-    if (!segmentId) return 0;
-    const pts = routes[segmentId]?.meta || [];
-    if (!pts.length) return 0;
-    return pts[pts.length - 1].km;
+    const bounds = getSegmentBounds(segmentId);
+    return bounds.length;
   };
 
+  const getSegmentBounds = (segmentId: string) => {
+    const pts = routes[segmentId]?.meta || [];
+    if (!pts.length) return { min: 0, max: 0, length: 0 };
+    const kms = pts.map((p) => p.km).filter((v) => Number.isFinite(v));
+    const min = Math.min(...kms);
+    const max = Math.max(...kms);
+    const length = Math.max(0, max - min);
+    return { min, max, length };
+  };
+
+  const pathSegments = useMemo(() => {
+    const ids = SEGMENTS.map((s) => s.id);
+    const startIdx = ids.indexOf(startSegment);
+    if (startIdx === -1) return [];
+    if (!endSegment || startSegment === endSegment) return [startSegment];
+    const endIdx = ids.indexOf(endSegment);
+    if (endIdx === -1) return [startSegment];
+    const from = Math.min(startIdx, endIdx);
+    const to = Math.max(startIdx, endIdx);
+    const slice = ids.slice(from, to + 1);
+    return startIdx <= endIdx ? slice : slice.reverse();
+  }, [startSegment, endSegment]);
+
   const totalSpan = useMemo(() => {
-    const lenA = startSegment ? getSegmentLength(startSegment) : 0;
-    const lenB =
-      startSegment && endSegment && startSegment !== endSegment
-        ? getSegmentLength(endSegment)
-        : 0;
-    return lenA + lenB;
-  }, [startSegment, endSegment, routes]);
+    return pathSegments.reduce((sum, segId) => {
+      const len = getSegmentLength(segId);
+      return Number.isFinite(len) ? sum + len : sum;
+    }, 0);
+  }, [pathSegments, routes]);
 
   useEffect(() => {
     setTargetKm(0);
@@ -270,13 +341,20 @@ const CutTGNIA: React.FC = () => {
   };
 
   const resolveSegmentForKm = (km: number) => {
-    if (!startSegment) return null;
-    const lenA = getSegmentLength(startSegment);
-    if (!endSegment || startSegment === endSegment || km <= lenA) {
-      return { segmentId: startSegment, localKm: km };
+    if (!pathSegments.length) return null;
+    let remaining = km;
+
+    for (let i = 0; i < pathSegments.length; i++) {
+      const segId = pathSegments[i];
+      const segLen = getSegmentLength(segId);
+      // skip empty segments
+      if (segLen <= 0) continue;
+      if (remaining <= segLen || i === pathSegments.length - 1) {
+        return { segmentId: segId, localKm: remaining };
+      }
+      remaining -= segLen;
     }
-    const localKm = km - lenA;
-    return { segmentId: endSegment, localKm };
+    return null;
   };
 
   const getNearestCableType = (
@@ -341,165 +419,167 @@ const CutTGNIA: React.FC = () => {
 
   // Mirroring matrix for TGN-IA (normal = current order, mirrored = reversed)
   const shouldMirrorSegment = (segmentId: string, a: string, b: string) => {
-    const mirrorMap: Record<string, Record<string, { a: boolean; b: boolean }>> =
-      {
-        S1: {
-          S2: { a: false, b: false },
-          S3: { a: false, b: false },
-          S4: { a: false, b: false },
-          S5: { a: false, b: false },
-          S6: { a: false, b: false },
-          S7: { a: false, b: true },
-          S8: { a: false, b: true },
-          S9: { a: false, b: true },
-          S10: { a: false, b: true },
-          S11: { a: false, b: true },
-          S12: { a: false, b: true }
-        },
-        S2: {
-          S1: { a: true, b: true },
-          S3: { a: false, b: false },
-          S4: { a: false, b: false },
-          S5: { a: false, b: false },
-          S6: { a: false, b: false },
-          S7: { a: true, b: true },
-          S8: { a: false, b: true },
-          S9: { a: false, b: true },
-          S10: { a: false, b: true },
-          S11: { a: false, b: true },
-          S12: { a: false, b: true }
-        },
-        S3: {
-          S1: { a: true, b: true },
-          S2: { a: true, b: true },
-          S4: { a: false, b: false },
-          S5: { a: false, b: false },
-          S6: { a: false, b: false },
-          S7: { a: true, b: true },
-          S8: { a: true, b: true },
-          S9: { a: false, b: true },
-          S10: { a: false, b: true },
-          S11: { a: false, b: true },
-          S12: { a: false, b: true }
-        },
-        S4: {
-          S1: { a: true, b: true },
-          S2: { a: true, b: true },
-          S3: { a: true, b: true },
-          S5: { a: false, b: false },
-          S6: { a: false, b: false },
-          S7: { a: true, b: true },
-          S8: { a: true, b: true },
-          S9: { a: true, b: true },
-          S10: { a: false, b: true },
-          S11: { a: false, b: true },
-          S12: { a: false, b: true }
-        },
-        S5: {
-          S1: { a: true, b: true },
-          S2: { a: true, b: true },
-          S3: { a: true, b: true },
-          S4: { a: true, b: true },
-          S6: { a: false, b: true },
-          S7: { a: true, b: true },
-          S8: { a: true, b: true },
-          S9: { a: true, b: true },
-          S10: { a: true, b: true },
-          S11: { a: false, b: true },
-          S12: { a: false, b: true }
-        },
-        S6: {
-          S1: { a: true, b: true },
-          S2: { a: true, b: true },
-          S3: { a: true, b: true },
-          S4: { a: true, b: true },
-          S5: { a: true, b: true },
-          S7: { a: true, b: true },
-          S8: { a: true, b: true },
-          S9: { a: true, b: true },
-          S10: { a: true, b: true },
-          S11: { a: true, b: true },
-          S12: { a: false, b: true }
-        },
-        S7: {
-          S1: { a: false, b: true },
-          S2: { a: false, b: false },
-          S3: { a: false, b: false },
-          S4: { a: false, b: false },
-          S5: { a: false, b: false },
-          S6: { a: false, b: false },
-          S8: { a: false, b: true },
-          S9: { a: false, b: true },
-          S10: { a: false, b: true },
-          S11: { a: false, b: true },
-          S12: { a: false, b: true }
-        },
-        S8: {
-          S1: { a: false, b: true },
-          S2: { a: false, b: true },
-          S3: { a: false, b: false },
-          S4: { a: false, b: false },
-          S5: { a: false, b: false },
-          S6: { a: false, b: false },
-          S7: { a: false, b: true },
-          S9: { a: false, b: true },
-          S10: { a: false, b: true },
-          S11: { a: false, b: true },
-          S12: { a: false, b: true }
-        },
-        S9: {
-          S1: { a: false, b: true },
-          S2: { a: false, b: false },
-          S3: { a: false, b: false },
-          S4: { a: false, b: false },
-          S5: { a: false, b: false },
-          S6: { a: false, b: false },
-          S7: { a: false, b: true },
-          S8: { a: false, b: true },
-          S10: { a: false, b: true },
-          S11: { a: false, b: true },
-          S12: { a: false, b: true }
-        },
-        S10: {
-          S1: { a: false, b: true },
-          S2: { a: false, b: true },
-          S3: { a: false, b: true },
-          S4: { a: false, b: true },
-          S5: { a: false, b: false },
-          S6: { a: false, b: false },
-          S7: { a: false, b: true },
-          S8: { a: false, b: true },
-          S9: { a: false, b: true },
-          S11: { a: false, b: true },
-          S12: { a: false, b: true }
-        },
-        S11: {
-          S1: { a: false, b: true },
-          S2: { a: false, b: true },
-          S3: { a: false, b: true },
-          S4: { a: false, b: true },
-          S5: { a: false, b: true },
-          S6: { a: false, b: true },
-          S7: { a: false, b: true },
-          S8: { a: false, b: true },
-          S9: { a: false, b: true },
-          S10: { a: false, b: true },
-          S12: { a: false, b: true }
-        },
-        S12: {
-          S1: { a: false, b: true },
-          S2: { a: false, b: true },
-          S3: { a: false, b: true },
-          S4: { a: false, b: true },
-          S5: { a: false, b: true },
-          S6: { a: false, b: true },
-          S7: { a: false, b: true },
-          S8: { a: false, b: true },
-          S9: { a: false, b: true },
-          S10: { a: false, b: true },
-          S11: { a: false, b: true }
-        }
-      };
+    const mirrorMap: Record<
+      string,
+      Record<string, { a: boolean; b: boolean }>
+    > = {
+      S1: {
+        S2: { a: false, b: false },
+        S3: { a: false, b: false },
+        S4: { a: false, b: false },
+        S5: { a: false, b: false },
+        S6: { a: false, b: false },
+        S7: { a: false, b: true },
+        S8: { a: false, b: true },
+        S9: { a: false, b: true },
+        S10: { a: false, b: true },
+        S11: { a: false, b: true },
+        S12: { a: false, b: true }
+      },
+      S2: {
+        S1: { a: true, b: true },
+        S3: { a: false, b: false },
+        S4: { a: false, b: false },
+        S5: { a: false, b: false },
+        S6: { a: false, b: false },
+        S7: { a: true, b: true },
+        S8: { a: false, b: true },
+        S9: { a: false, b: true },
+        S10: { a: false, b: true },
+        S11: { a: false, b: true },
+        S12: { a: false, b: true }
+      },
+      S3: {
+        S1: { a: true, b: true },
+        S2: { a: true, b: true },
+        S4: { a: false, b: false },
+        S5: { a: false, b: false },
+        S6: { a: false, b: false },
+        S7: { a: true, b: true },
+        S8: { a: true, b: true },
+        S9: { a: false, b: true },
+        S10: { a: false, b: true },
+        S11: { a: false, b: true },
+        S12: { a: false, b: true }
+      },
+      S4: {
+        S1: { a: true, b: true },
+        S2: { a: true, b: true },
+        S3: { a: true, b: true },
+        S5: { a: false, b: false },
+        S6: { a: false, b: false },
+        S7: { a: true, b: true },
+        S8: { a: true, b: true },
+        S9: { a: true, b: true },
+        S10: { a: false, b: true },
+        S11: { a: false, b: true },
+        S12: { a: false, b: true }
+      },
+      S5: {
+        S1: { a: true, b: true },
+        S2: { a: true, b: true },
+        S3: { a: true, b: true },
+        S4: { a: true, b: true },
+        S6: { a: false, b: true },
+        S7: { a: true, b: true },
+        S8: { a: true, b: true },
+        S9: { a: true, b: true },
+        S10: { a: true, b: true },
+        S11: { a: false, b: true },
+        S12: { a: false, b: true }
+      },
+      S6: {
+        S1: { a: true, b: true },
+        S2: { a: true, b: true },
+        S3: { a: true, b: true },
+        S4: { a: true, b: true },
+        S5: { a: true, b: true },
+        S7: { a: true, b: true },
+        S8: { a: true, b: true },
+        S9: { a: true, b: true },
+        S10: { a: true, b: true },
+        S11: { a: true, b: true },
+        S12: { a: false, b: true }
+      },
+      S7: {
+        S1: { a: false, b: true },
+        S2: { a: false, b: false },
+        S3: { a: false, b: false },
+        S4: { a: false, b: false },
+        S5: { a: false, b: false },
+        S6: { a: false, b: false },
+        S8: { a: false, b: true },
+        S9: { a: false, b: true },
+        S10: { a: false, b: true },
+        S11: { a: false, b: true },
+        S12: { a: false, b: true }
+      },
+      S8: {
+        S1: { a: false, b: true },
+        S2: { a: false, b: true },
+        S3: { a: false, b: false },
+        S4: { a: false, b: false },
+        S5: { a: false, b: false },
+        S6: { a: false, b: false },
+        S7: { a: false, b: true },
+        S9: { a: false, b: true },
+        S10: { a: false, b: true },
+        S11: { a: false, b: true },
+        S12: { a: false, b: true }
+      },
+      S9: {
+        S1: { a: false, b: true },
+        S2: { a: false, b: false },
+        S3: { a: false, b: false },
+        S4: { a: false, b: false },
+        S5: { a: false, b: false },
+        S6: { a: false, b: false },
+        S7: { a: false, b: true },
+        S8: { a: false, b: true },
+        S10: { a: false, b: true },
+        S11: { a: false, b: true },
+        S12: { a: false, b: true }
+      },
+      S10: {
+        S1: { a: false, b: true },
+        S2: { a: false, b: true },
+        S3: { a: false, b: true },
+        S4: { a: false, b: true },
+        S5: { a: false, b: false },
+        S6: { a: false, b: false },
+        S7: { a: false, b: true },
+        S8: { a: false, b: true },
+        S9: { a: false, b: true },
+        S11: { a: false, b: true },
+        S12: { a: false, b: true }
+      },
+      S11: {
+        S1: { a: false, b: true },
+        S2: { a: false, b: true },
+        S3: { a: false, b: true },
+        S4: { a: false, b: true },
+        S5: { a: false, b: true },
+        S6: { a: false, b: true },
+        S7: { a: false, b: true },
+        S8: { a: false, b: true },
+        S9: { a: false, b: true },
+        S10: { a: false, b: true },
+        S12: { a: false, b: true }
+      },
+      S12: {
+        S1: { a: false, b: true },
+        S2: { a: false, b: true },
+        S3: { a: false, b: true },
+        S4: { a: false, b: true },
+        S5: { a: false, b: true },
+        S6: { a: false, b: true },
+        S7: { a: false, b: true },
+        S8: { a: false, b: true },
+        S9: { a: false, b: true },
+        S10: { a: false, b: true },
+        S11: { a: false, b: true }
+      }
+    };
 
     const rulesForA = mirrorMap[a];
     const pairRule = rulesForA ? rulesForA[b] : undefined;
@@ -507,6 +587,37 @@ const CutTGNIA: React.FC = () => {
     if (segmentId === a) return pairRule.a;
     if (segmentId === b) return pairRule.b;
     return false;
+  };
+
+  // Apply mirroring rules consistently across all segments between A and B
+  const isSegmentMirrored = (segmentId: string) => {
+    if (!startSegment) return false;
+
+    if (startSegment && endSegment) {
+      // Evaluate mirroring for any segment that falls within the selected span (A ↔ B).
+      const ids = SEGMENTS.map((s) => s.id);
+      const aIdx = ids.indexOf(startSegment);
+      const bIdx = ids.indexOf(endSegment);
+      const segIdx = ids.indexOf(segmentId);
+
+      if (aIdx !== -1 && bIdx !== -1 && segIdx !== -1) {
+        const from = Math.min(aIdx, bIdx);
+        const to = Math.max(aIdx, bIdx);
+        if (segIdx >= from && segIdx <= to) {
+          return shouldMirrorSegment(segmentId, startSegment, endSegment);
+        }
+      }
+
+      // If outside span, fall back to endpoint check
+      if (segmentId === startSegment || segmentId === endSegment) {
+        return shouldMirrorSegment(segmentId, startSegment, endSegment);
+      }
+    }
+
+    const rulesForStart = SEGMENTS.map((s) => s.id).includes(segmentId)
+      ? shouldMirrorSegment(segmentId, startSegment, segmentId)
+      : false;
+    return rulesForStart || false;
   };
 
   const interpolatePoint = (
@@ -519,15 +630,20 @@ const CutTGNIA: React.FC = () => {
     const meta = store.meta;
     if (!meta.length || !coords.length) return null;
 
-    const segLen = getSegmentLength(segmentId);
+    const { min, max, length } = getSegmentBounds(segmentId);
+    const segLen = length;
     const kmClamped = Math.min(Math.max(km, 0), segLen);
-    const mirror = shouldMirrorSegment(segmentId, startSegment, endSegment);
-    const kmForLookup = mirror ? Math.max(0, segLen - kmClamped) : kmClamped;
+    const mirror = isSegmentMirrored(segmentId);
+    const kmForLookup = mirror ? max - kmClamped : min + kmClamped;
 
     const cableType = getNearestCableType(meta, kmForLookup);
     const depthInterp = getInterpolatedDepth(meta, kmForLookup);
     if (kmForLookup <= coords[0].km)
-      return { ...coords[0], cableType, depth: depthInterp ?? coords[0].depth };
+      return {
+        ...coords[0],
+        cableType,
+        depth: depthInterp ?? coords[0].depth
+      };
     if (kmForLookup >= coords[coords.length - 1].km)
       return {
         ...coords[coords.length - 1],
@@ -574,6 +690,8 @@ const CutTGNIA: React.FC = () => {
       cutType: string;
       faultDate: string;
       cableType: string | null;
+      pointA?: string;
+      pointB?: string;
     }
   ) => {
     if (!map || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
@@ -723,11 +841,19 @@ const CutTGNIA: React.FC = () => {
     const cutId = `tgnia${segNum}-${Date.now()}`;
     const depth = point.depth ?? 'Unknown';
     const cableType = point.cableType ?? 'Unknown';
+    const pointALabel = getSegmentLabel(startSegment);
+    const pointBLabel = getSegmentLabel(endSegment);
 
     const combinedFaultDate = combineDateTime(faultDate, faultTime);
 
-    const payload = {
-      cut_id: cutId,
+    const desiredPrefix = `tgnia${segNum}`;
+    const shouldRename =
+      editingCutId && !editingCutId.startsWith(desiredPrefix);
+    const finalCutId = shouldRename
+      ? `${desiredPrefix}-${Date.now()}`
+      : editingCutId || cutId;
+    const payload: any = {
+      cut_id: finalCutId,
       distance: Number(bounded.toFixed(3)),
       cut_type: cutType,
       fault_date: combinedFaultDate,
@@ -737,15 +863,22 @@ const CutTGNIA: React.FC = () => {
       depth,
       cable_type: cableType,
       cableType,
-      cable: 'tgnia',
-      segment: `s${segNum}`,
-      source_table: `tgnia_rpl_s${segNum}`
+      point_a: pointALabel,
+      point_b: pointBLabel
     };
+    payload.cable = 'tgnia';
+    payload.segment = `s${segNum}`;
+    payload.source_table = `tgnia_rpl_s${segNum}`;
+    if (shouldRename) payload.new_cut_id = finalCutId;
 
     setSubmitting(true);
     try {
-      const res = await fetch(`${apiBaseUrl}${port}/cable-cuts`, {
-        method: 'POST',
+      const url = editingCutId
+        ? `${apiBaseUrl}${port}/cable-cuts/${finalCutId}`
+        : `${apiBaseUrl}${port}/cable-cuts`;
+      const method = editingCutId ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
@@ -764,12 +897,14 @@ const CutTGNIA: React.FC = () => {
         setSubmitting(false);
         return;
       }
-      addMarkerToMap(cutId, point.lat, point.lng, {
+      addMarkerToMap(finalCutId, point.lat, point.lng, {
         distance: payload.distance,
         depth: depth,
         cutType: cutType,
         faultDate: payload.fault_date,
-        cableType: cableType
+        cableType: cableType,
+        pointA: pointALabel,
+        pointB: pointBLabel
       });
       refetchDeletedCables();
       setToast({
@@ -878,14 +1013,6 @@ const CutTGNIA: React.FC = () => {
                 <Typography variant="body2" sx={{ fontWeight: 600 }}>
                   Target Distance (km)
                 </Typography>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography variant="caption" color="text.secondary">
-                    Point A length: {lenA ? `${lenA.toFixed(3)} km` : '--'}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Point B length: {lenB ? `${lenB.toFixed(3)} km` : '--'}
-                  </Typography>
-                </Box>
                 <TextField
                   label="Target Distance (km)"
                   type="number"
@@ -982,6 +1109,7 @@ const CutTGNIA: React.FC = () => {
                 </MenuItem>
                 <MenuItem value="Fiber Break">Fiber Break</MenuItem>
                 <MenuItem value="Full Cut">Full Cut</MenuItem>
+                <MenuItem value="Unclassified">Unclassified</MenuItem>
               </TextField>
             </Box>
           )}
@@ -994,9 +1122,7 @@ const CutTGNIA: React.FC = () => {
             onClick={handleSubmit}
             variant="contained"
             color="primary"
-            disabled={
-              submitting || loading || totalSpan === 0 || !isDataReady
-            }
+            disabled={submitting || loading || totalSpan === 0 || !isDataReady}
           >
             {submitting ? 'Saving...' : 'Cut Cable'}
           </Button>

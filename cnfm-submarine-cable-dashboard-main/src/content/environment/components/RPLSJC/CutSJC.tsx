@@ -42,6 +42,185 @@ type SegmentData = {
   endpoint: string;
 };
 
+// Preserve the physical order of the cable spans
+const SJC_SEGMENT_ORDER = [
+  'S1',
+  'S3',
+  'S4',
+  'S5',
+  'S6',
+  'S7',
+  'S8',
+  'S9',
+  'S10',
+  'S11',
+  'S12',
+  'S13'
+];
+
+// Mirroring matrix for SJC (normal = current order, mirrored = reversed)
+const SJC_MIRROR_RULES: Record<
+  string,
+  Record<string, { a: boolean; b: boolean }>
+> = {
+  S1: {
+    S3: { a: false, b: false },
+    S4: { a: false, b: true },
+    S5: { a: false, b: false },
+    S6: { a: false, b: true },
+    S7: { a: false, b: false },
+    S8: { a: false, b: true },
+    S9: { a: false, b: false },
+    S10: { a: false, b: true },
+    S11: { a: false, b: false },
+    S12: { a: false, b: true },
+    S13: { a: false, b: true }
+  },
+  S3: {
+    S1: { a: true, b: true },
+    S4: { a: false, b: true },
+    S5: { a: false, b: false },
+    S6: { a: false, b: true },
+    S7: { a: false, b: false },
+    S8: { a: false, b: true },
+    S9: { a: false, b: false },
+    S10: { a: false, b: true },
+    S11: { a: false, b: false },
+    S12: { a: false, b: true },
+    S13: { a: false, b: true }
+  },
+  S4: {
+    S1: { a: false, b: true },
+    S3: { a: false, b: true },
+    S5: { a: false, b: false },
+    S6: { a: false, b: true },
+    S7: { a: false, b: false },
+    S8: { a: false, b: true },
+    S9: { a: false, b: false },
+    S10: { a: false, b: true },
+    S11: { a: false, b: false },
+    S12: { a: false, b: true },
+    S13: { a: false, b: true }
+  },
+  S5: {
+    S1: { a: false, b: true },
+    S3: { a: false, b: true },
+    S4: { a: false, b: true },
+    S6: { a: false, b: true },
+    S7: { a: false, b: false },
+    S8: { a: false, b: true },
+    S9: { a: false, b: false },
+    S10: { a: false, b: true },
+    S11: { a: false, b: false },
+    S12: { a: false, b: true },
+    S13: { a: false, b: true }
+  },
+  S6: {
+    S1: { a: false, b: true },
+    S3: { a: false, b: true },
+    S4: { a: false, b: true },
+    S5: { a: false, b: true },
+    S7: { a: false, b: false },
+    S8: { a: false, b: true },
+    S9: { a: false, b: false },
+    S10: { a: false, b: true },
+    S11: { a: false, b: false },
+    S12: { a: false, b: true },
+    S13: { a: false, b: true }
+  },
+  S7: {
+    S1: { a: true, b: true },
+    S3: { a: true, b: true },
+    S4: { a: true, b: true },
+    S5: { a: true, b: true },
+    S6: { a: true, b: true },
+    S8: { a: false, b: true },
+    S9: { a: false, b: false },
+    S10: { a: false, b: true },
+    S11: { a: false, b: false },
+    S12: { a: false, b: true },
+    S13: { a: false, b: true }
+  },
+  S8: {
+    S1: { a: false, b: true },
+    S3: { a: false, b: true },
+    S4: { a: false, b: true },
+    S5: { a: false, b: true },
+    S6: { a: false, b: true },
+    S7: { a: false, b: true },
+    S9: { a: false, b: false },
+    S10: { a: false, b: true },
+    S11: { a: false, b: false },
+    S12: { a: false, b: true },
+    S13: { a: false, b: true }
+  },
+  S9: {
+    S1: { a: true, b: true },
+    S3: { a: true, b: true },
+    S4: { a: true, b: true },
+    S5: { a: true, b: true },
+    S6: { a: true, b: true },
+    S7: { a: true, b: true },
+    S8: { a: true, b: true },
+    S10: { a: false, b: true },
+    S11: { a: false, b: false },
+    S12: { a: false, b: true },
+    S13: { a: false, b: true }
+  },
+  S10: {
+    S1: { a: false, b: true },
+    S3: { a: false, b: true },
+    S4: { a: false, b: true },
+    S5: { a: false, b: true },
+    S6: { a: false, b: true },
+    S7: { a: false, b: true },
+    S8: { a: false, b: true },
+    S9: { a: false, b: true },
+    S11: { a: false, b: false },
+    S12: { a: false, b: true },
+    S13: { a: false, b: true }
+  },
+  S11: {
+    S1: { a: true, b: true },
+    S3: { a: true, b: true },
+    S4: { a: true, b: true },
+    S5: { a: true, b: true },
+    S6: { a: true, b: true },
+    S7: { a: true, b: true },
+    S8: { a: true, b: true },
+    S9: { a: true, b: true },
+    S10: { a: true, b: true },
+    S12: { a: false, b: true },
+    S13: { a: false, b: true }
+  },
+  S12: {
+    S1: { a: false, b: true },
+    S3: { a: false, b: true },
+    S4: { a: false, b: true },
+    S5: { a: false, b: true },
+    S6: { a: false, b: true },
+    S7: { a: false, b: true },
+    S8: { a: false, b: true },
+    S9: { a: false, b: true },
+    S10: { a: false, b: true },
+    S11: { a: false, b: true },
+    S13: { a: false, b: true }
+  },
+  S13: {
+    S1: { a: false, b: true },
+    S3: { a: false, b: true },
+    S4: { a: false, b: true },
+    S5: { a: false, b: true },
+    S6: { a: false, b: true },
+    S7: { a: false, b: true },
+    S8: { a: false, b: true },
+    S9: { a: false, b: true },
+    S10: { a: false, b: true },
+    S11: { a: false, b: true },
+    S12: { a: false, b: true }
+  }
+};
+
 // SJC has segments 1 and 3-13
 const SEGMENTS: SegmentData[] = [
   { id: 'S1', label: 'S1 - Tuas - Lay Interface', endpoint: '/sjc-rpl-s1' },
@@ -124,7 +303,6 @@ const extractLatLng = (item: any) => {
     typeof item.cable_type === 'string' ? item.cable_type.trim() || null : null;
   return { lat, lng, depth, cableType };
 };
-
 const CutSJC: React.FC = () => {
   const map = useMap();
   const buttonContainerRef = useRef<HTMLDivElement | null>(null);
@@ -151,10 +329,13 @@ const CutSJC: React.FC = () => {
     severity: 'info'
   });
   const [distanceError, setDistanceError] = useState<string>('');
+  const [editingCutId, setEditingCutId] = useState<string | null>(null);
 
   const apiBaseUrl = process.env.REACT_APP_API_BASE_URL || 'http://localhost';
   const port = process.env.REACT_APP_PORT || ':8081';
   const { refetch: refetchDeletedCables } = useDeletedCables();
+  const getSegmentLabel = (id: string) =>
+    SEGMENTS.find((s) => s.id === id)?.label || id || 'Unknown';
 
   useEffect(() => {
     map.attributionControl.remove();
@@ -171,6 +352,55 @@ const CutSJC: React.FC = () => {
       Object.values(cutMarkersRef.current).forEach((m) => map.removeLayer(m));
     };
   }, [map]);
+
+  // Prefill edit mode when arriving with mode=edit&cutId&sim=sjc
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mode = params.get('mode');
+    const cutId = params.get('cutId');
+    const sim = params.get('sim');
+
+    if (mode === 'edit' && cutId && sim === 'sjc') {
+      setEditingCutId(cutId);
+      const loadCut = async () => {
+        try {
+          const res = await fetch(`${apiBaseUrl}${port}/cable-cuts/${cutId}`);
+          if (!res.ok) {
+            console.warn('Edit mode: cut not found, exiting edit mode.');
+            setEditingCutId(null);
+            return;
+          }
+          const data = await res.json();
+          if (!data) return;
+
+          const parseSeg = (label: string | undefined) => {
+            if (!label) return '';
+            return label.trim().split(' ')[0] || '';
+          };
+          const segA = parseSeg(data.point_a);
+          const segB = parseSeg(data.point_b);
+          if (segA) setStartSegment(segA);
+          if (segB) setEndSegment(segB);
+
+          if (data.distance !== undefined && data.distance !== null) {
+            setTargetKm(Number(data.distance) || 0);
+            setTargetKmInput(String(data.distance));
+          }
+          if (data.cut_type) setCutType(data.cut_type);
+          if (data.fault_date) {
+            const [datePart, timePart] = String(data.fault_date).split('T');
+            if (datePart) setFaultDate(datePart);
+            if (timePart) setFaultTime(timePart.slice(0, 5));
+          }
+          setOpen(true);
+        } catch (err) {
+          console.error('Failed to preload cut data', err);
+          setEditingCutId(null);
+        }
+      };
+      loadCut();
+    }
+  }, [apiBaseUrl, port, location.search]);
 
   // Fetch all segment routes
   useEffect(() => {
@@ -246,14 +476,25 @@ const CutSJC: React.FC = () => {
     return pts[pts.length - 1].km;
   };
 
+  const pathSegments = useMemo(() => {
+    const ids = SEGMENTS.map((s) => s.id);
+    const startIdx = ids.indexOf(startSegment);
+    if (startIdx === -1) return [];
+    if (!endSegment || startSegment === endSegment) return [startSegment];
+    const endIdx = ids.indexOf(endSegment);
+    if (endIdx === -1) return [startSegment];
+    const from = Math.min(startIdx, endIdx);
+    const to = Math.max(startIdx, endIdx);
+    const slice = ids.slice(from, to + 1);
+    return startIdx <= endIdx ? slice : slice.reverse();
+  }, [startSegment, endSegment]);
+
   const totalSpan = useMemo(() => {
-    const lenA = startSegment ? getSegmentLength(startSegment) : 0;
-    const lenB =
-      startSegment && endSegment && startSegment !== endSegment
-        ? getSegmentLength(endSegment)
-        : 0;
-    return lenA + lenB;
-  }, [startSegment, endSegment, routes]);
+    return pathSegments.reduce(
+      (sum, segId) => sum + getSegmentLength(segId),
+      0
+    );
+  }, [pathSegments, routes]);
 
   useEffect(() => {
     setTargetKm(0);
@@ -298,13 +539,18 @@ const CutSJC: React.FC = () => {
   };
 
   const resolveSegmentForKm = (km: number) => {
-    if (!startSegment) return null;
-    const lenA = getSegmentLength(startSegment);
-    if (!endSegment || startSegment === endSegment || km <= lenA) {
-      return { segmentId: startSegment, localKm: km };
+    if (!pathSegments.length) return null;
+    let remaining = km;
+
+    for (let i = 0; i < pathSegments.length; i++) {
+      const segId = pathSegments[i];
+      const segLen = getSegmentLength(segId);
+      if (remaining <= segLen || i === pathSegments.length - 1) {
+        return { segmentId: segId, localKm: remaining };
+      }
+      remaining -= segLen;
     }
-    const localKm = km - lenA;
-    return { segmentId: endSegment, localKm };
+    return null;
   };
 
   const getNearestCableType = (
@@ -369,165 +615,7 @@ const CutSJC: React.FC = () => {
 
   // Mirroring matrix for SJC (normal = current order, mirrored = reversed)
   const shouldMirrorSegment = (segmentId: string, a: string, b: string) => {
-    const mirrorMap: Record<string, Record<string, { a: boolean; b: boolean }>> =
-      {
-        S1: {
-          S3: { a: false, b: false },
-          S4: { a: false, b: true },
-          S5: { a: false, b: false },
-          S6: { a: false, b: true },
-          S7: { a: false, b: false },
-          S8: { a: false, b: true },
-          S9: { a: false, b: false },
-          S10: { a: false, b: true },
-          S11: { a: false, b: false },
-          S12: { a: false, b: true },
-          S13: { a: false, b: true }
-        },
-        S3: {
-          S1: { a: true, b: true },
-          S4: { a: false, b: true },
-          S5: { a: false, b: false },
-          S6: { a: false, b: true },
-          S7: { a: false, b: false },
-          S8: { a: false, b: true },
-          S9: { a: false, b: false },
-          S10: { a: false, b: true },
-          S11: { a: false, b: false },
-          S12: { a: false, b: true },
-          S13: { a: false, b: true }
-        },
-        S4: {
-          S1: { a: false, b: true },
-          S3: { a: false, b: true },
-          S5: { a: false, b: false },
-          S6: { a: false, b: true },
-          S7: { a: false, b: false },
-          S8: { a: false, b: true },
-          S9: { a: false, b: false },
-          S10: { a: false, b: true },
-          S11: { a: false, b: false },
-          S12: { a: false, b: true },
-          S13: { a: false, b: true }
-        },
-        S5: {
-          S1: { a: false, b: true },
-          S3: { a: false, b: true },
-          S4: { a: false, b: true },
-          S6: { a: false, b: true },
-          S7: { a: false, b: false },
-          S8: { a: false, b: true },
-          S9: { a: false, b: false },
-          S10: { a: false, b: true },
-          S11: { a: false, b: false },
-          S12: { a: false, b: true },
-          S13: { a: false, b: true }
-        },
-        S6: {
-          S1: { a: false, b: true },
-          S3: { a: false, b: true },
-          S4: { a: false, b: true },
-          S5: { a: false, b: true },
-          S7: { a: false, b: false },
-          S8: { a: false, b: true },
-          S9: { a: false, b: false },
-          S10: { a: false, b: true },
-          S11: { a: false, b: false },
-          S12: { a: false, b: true },
-          S13: { a: false, b: true }
-        },
-        S7: {
-          S1: { a: true, b: true },
-          S3: { a: true, b: true },
-          S4: { a: true, b: true },
-          S5: { a: true, b: true },
-          S6: { a: true, b: true },
-          S8: { a: false, b: true },
-          S9: { a: false, b: false },
-          S10: { a: false, b: true },
-          S11: { a: false, b: false },
-          S12: { a: false, b: true },
-          S13: { a: false, b: true }
-        },
-        S8: {
-          S1: { a: false, b: true },
-          S3: { a: false, b: true },
-          S4: { a: false, b: true },
-          S5: { a: false, b: true },
-          S6: { a: false, b: true },
-          S7: { a: false, b: true },
-          S9: { a: false, b: false },
-          S10: { a: false, b: true },
-          S11: { a: false, b: false },
-          S12: { a: false, b: true },
-          S13: { a: false, b: true }
-        },
-        S9: {
-          S1: { a: true, b: true },
-          S3: { a: true, b: true },
-          S4: { a: true, b: true },
-          S5: { a: true, b: true },
-          S6: { a: true, b: true },
-          S7: { a: true, b: true },
-          S8: { a: true, b: true },
-          S10: { a: false, b: true },
-          S11: { a: false, b: false },
-          S12: { a: false, b: true },
-          S13: { a: false, b: true }
-        },
-        S10: {
-          S1: { a: false, b: true },
-          S3: { a: false, b: true },
-          S4: { a: false, b: true },
-          S5: { a: false, b: true },
-          S6: { a: false, b: true },
-          S7: { a: false, b: true },
-          S8: { a: false, b: true },
-          S9: { a: false, b: true },
-          S11: { a: false, b: false },
-          S12: { a: false, b: true },
-          S13: { a: false, b: true }
-        },
-        S11: {
-          S1: { a: true, b: true },
-          S3: { a: true, b: true },
-          S4: { a: true, b: true },
-          S5: { a: true, b: true },
-          S6: { a: true, b: true },
-          S7: { a: true, b: true },
-          S8: { a: true, b: true },
-          S9: { a: true, b: true },
-          S10: { a: true, b: true },
-          S12: { a: false, b: true },
-          S13: { a: false, b: true }
-        },
-        S12: {
-          S1: { a: false, b: true },
-          S3: { a: false, b: true },
-          S4: { a: false, b: true },
-          S5: { a: false, b: true },
-          S6: { a: false, b: true },
-          S7: { a: false, b: true },
-          S8: { a: false, b: true },
-          S9: { a: false, b: true },
-          S10: { a: false, b: true },
-          S11: { a: false, b: true },
-          S13: { a: false, b: true }
-        },
-        S13: {
-          S1: { a: false, b: true },
-          S3: { a: false, b: true },
-          S4: { a: false, b: true },
-          S5: { a: false, b: true },
-          S6: { a: false, b: true },
-          S7: { a: false, b: true },
-          S8: { a: false, b: true },
-          S9: { a: false, b: true },
-          S10: { a: false, b: true },
-          S11: { a: false, b: true },
-          S12: { a: false, b: true }
-        }
-      };
+    const mirrorMap = SJC_MIRROR_RULES;
 
     const rulesForA = mirrorMap[a];
     const pairRule = rulesForA ? rulesForA[b] : undefined;
@@ -535,6 +623,19 @@ const CutSJC: React.FC = () => {
     if (segmentId === a) return pairRule.a;
     if (segmentId === b) return pairRule.b;
     return false;
+  };
+
+  const isSegmentMirrored = (segmentId: string) => {
+    if (!startSegment) return false;
+    if (startSegment && endSegment) {
+      if (segmentId === startSegment || segmentId === endSegment) {
+        return shouldMirrorSegment(segmentId, startSegment, endSegment);
+      }
+    }
+    const rulesForStart = SEGMENTS.map((s) => s.id).includes(segmentId)
+      ? shouldMirrorSegment(segmentId, startSegment, segmentId)
+      : false;
+    return rulesForStart || false;
   };
 
   const interpolatePoint = (
@@ -549,7 +650,11 @@ const CutSJC: React.FC = () => {
 
     const segLen = getSegmentLength(segmentId);
     const kmClamped = Math.min(Math.max(km, 0), segLen);
-    const shouldMirror = shouldMirrorSegment(segmentId, startSegment, endSegment);
+    const shouldMirror = shouldMirrorSegment(
+      segmentId,
+      startSegment,
+      endSegment
+    );
     const kmForLookup = shouldMirror
       ? Math.max(0, segLen - kmClamped)
       : kmClamped;
@@ -604,6 +709,8 @@ const CutSJC: React.FC = () => {
       cutType: string;
       faultDate: string;
       cableType: string | null;
+      pointA?: string;
+      pointB?: string;
     }
   ) => {
     if (!map || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
@@ -756,8 +863,14 @@ const CutSJC: React.FC = () => {
 
     const combinedFaultDate = combineDateTime(faultDate, faultTime);
 
-    const payload = {
-      cut_id: cutId,
+    const desiredPrefix = `sjc${segNum}`;
+    const shouldRename =
+      editingCutId && !editingCutId.startsWith(desiredPrefix);
+    const finalCutId = shouldRename
+      ? `${desiredPrefix}-${Date.now()}`
+      : editingCutId || cutId;
+    const payload: any = {
+      cut_id: finalCutId,
       distance: Number(bounded.toFixed(3)),
       cut_type: cutType,
       fault_date: combinedFaultDate,
@@ -767,15 +880,22 @@ const CutSJC: React.FC = () => {
       depth,
       cable_type: cableType,
       cableType,
-      cable: 'sjc',
-      segment: `s${segNum}`,
-      source_table: `sjc_rpl_s${segNum}`
+      point_a: getSegmentLabel(startSegment),
+      point_b: getSegmentLabel(endSegment)
     };
+    payload.cable = 'sjc';
+    payload.segment = `s${segNum}`;
+    payload.source_table = `sjc_rpl_s${segNum}`;
+    if (shouldRename) payload.new_cut_id = finalCutId;
 
     setSubmitting(true);
     try {
-      const res = await fetch(`${apiBaseUrl}${port}/cable-cuts`, {
-        method: 'POST',
+      const url = editingCutId
+        ? `${apiBaseUrl}${port}/cable-cuts/${finalCutId}`
+        : `${apiBaseUrl}${port}/cable-cuts`;
+      const method = editingCutId ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
@@ -794,12 +914,14 @@ const CutSJC: React.FC = () => {
         setSubmitting(false);
         return;
       }
-      addMarkerToMap(cutId, point.lat, point.lng, {
+      addMarkerToMap(finalCutId, point.lat, point.lng, {
         distance: payload.distance,
         depth: depth,
         cutType: cutType,
         faultDate: payload.fault_date,
-        cableType: cableType
+        cableType: cableType,
+        pointA: payload.point_a,
+        pointB: payload.point_b
       });
       refetchDeletedCables();
       setToast({
@@ -908,14 +1030,6 @@ const CutSJC: React.FC = () => {
                 <Typography variant="body2" sx={{ fontWeight: 600 }}>
                   Target Distance (km)
                 </Typography>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography variant="caption" color="text.secondary">
-                    Point A length: {lenA ? `${lenA.toFixed(3)} km` : '--'}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Point B length: {lenB ? `${lenB.toFixed(3)} km` : '--'}
-                  </Typography>
-                </Box>
                 <TextField
                   label="Target Distance (km)"
                   type="number"
@@ -1012,6 +1126,7 @@ const CutSJC: React.FC = () => {
                 </MenuItem>
                 <MenuItem value="Fiber Break">Fiber Break</MenuItem>
                 <MenuItem value="Full Cut">Full Cut</MenuItem>
+                <MenuItem value="Unclassified">Unclassified</MenuItem>
               </TextField>
             </Box>
           )}
@@ -1024,9 +1139,7 @@ const CutSJC: React.FC = () => {
             onClick={handleSubmit}
             variant="contained"
             color="primary"
-            disabled={
-              submitting || loading || totalSpan === 0 || !isDataReady
-            }
+            disabled={submitting || loading || totalSpan === 0 || !isDataReady}
           >
             {submitting ? 'Saving...' : 'Cut Cable'}
           </Button>

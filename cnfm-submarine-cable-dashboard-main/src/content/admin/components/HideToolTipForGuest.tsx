@@ -113,10 +113,12 @@ const styles = {
     p: 0,
     display: 'flex',
     flexDirection: 'column',
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
     justifyContent: 'flex-start',
-    overflow: 'hidden',
-    gap: 1
+    overflow: 'visible',
+    gap: 2,
+    pr: 1, // give badges breathing room on the right
+    pl: 2 // align with top card edge
   },
   headerContainer: {
     display: 'flex',
@@ -136,23 +138,30 @@ const styles = {
     p: 2,
     boxShadow: 2,
     mb: 3,
-    width: '100%',
-    maxWidth: 280,
-    border: `1px solid rgba(56, 84, 165, 0.2)`
+    width: 'max-content',
+    maxWidth: 'max-content',
+    minWidth: 0,
+    display: 'inline-flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    border: `1px solid rgba(56, 84, 165, 0.2)`,
+    alignSelf: 'flex-start'
   },
   systemCard: (color: string) => ({
     background: 'rgba(0,0,0,0.25)',
-    px: 1.25,
-    py: 0.75,
-    borderRadius: 14,
+    px: 1.15,
+    py: 0.9,
+    borderRadius: 999,
     boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
-    width: 'fit-content',
-    minWidth: 'unset',
+    width: 160,
+    minWidth: 160,
     display: 'inline-flex',
     border: '1px solid rgba(255,255,255,0.12)',
     cursor: 'pointer',
     transition: 'all 0.2s ease-in-out',
     backdropFilter: 'blur(8px)',
+    position: 'relative',
+    overflow: 'visible',
     '&:hover': {
       boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
       transform: 'translateY(-1px)',
@@ -279,14 +288,14 @@ const SystemCard: React.FC<{
   onClick: (system: CableSystemData) => void;
 }> = ({ system, onClick }) => (
   <Paper onClick={() => onClick(system)} sx={styles.systemCard(system.color)}>
-    {/* Header with utilization pill */}
     <Box
       sx={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'flex-start',
         gap: 0.5,
-        mb: 0.25
+        width: '100%',
+        pr: 5 // leave space for badge
       }}
     >
       <Typography
@@ -298,33 +307,37 @@ const SystemCard: React.FC<{
       >
         {system.name}
       </Typography>
-      <Box
+    </Box>
+    {/* Circular badge anchored to the right side */}
+    <Box
+      sx={{
+        position: 'absolute',
+        right: -8,
+        top: '50%',
+        transform: 'translateY(-50%)',
+        width: 54,
+        height: 54,
+        borderRadius: '50%',
+        backgroundColor: 'rgba(255,255,255,0.82)',
+        border: '1px solid rgba(255,255,255,0.28)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        boxShadow: '0 2px 6px rgba(0,0,0,0.25)'
+      }}
+    >
+      <Typography
+        variant="body2"
         sx={{
-          minWidth: 'auto',
-          width: 'fit-content',
-          height: 26,
-          borderRadius: '999px',
-          backgroundColor: 'rgba(255,255,255,0.18)',
-          border: '1px solid rgba(255,255,255,0.28)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          px: 0.75
+          fontWeight: 800,
+          color: '#1f2937',
+          lineHeight: 1,
+          fontSize: 'clamp(10px, 2vw, 12px)',
+          textAlign: 'center'
         }}
       >
-        <Typography
-          variant="body2"
-          sx={{
-            fontWeight: 800,
-            color: '#FFFFFF',
-            lineHeight: 1.1,
-            fontSize: '12px',
-            textAlign: 'center'
-          }}
-        >
-          {`${system.avgUtilization}%`}
-        </Typography>
-      </Box>
+        {`${system.avgUtilization}%`}
+      </Typography>
     </Box>
   </Paper>
 );

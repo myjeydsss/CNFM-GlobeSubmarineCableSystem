@@ -162,8 +162,6 @@ function RPLSeaUS2() {
         const response = await fetch(`${apiBaseUrl}${port}/sea-us-rpl-s2`);
         const result = await response.json();
 
-        console.log('API /sea-us-rpl-s2 result:', result);
-
         if (Array.isArray(result) && result.length > 0) {
           const cumulativeValues = result
             .map((item: any) => item.cable_cumulative_total)
@@ -216,8 +214,6 @@ function RPLSeaUS2() {
               (item: any) =>
                 [item.full_latitude, item.full_longitude] as [number, number]
             );
-
-          console.log('Mapped polyline positions:', mappedPositions);
 
           // Check for BMH Davao City and BU Davao City
           const hasBMHDavao = result.some((item: any) => item.event && item.event.includes('BMH Davao City'));

@@ -453,20 +453,16 @@ const UserCableMap = React.memo<UserCableMapProps>(
       setMapHeight('100vh');
     }, []);
 
-    // Enhanced notification helper
+    // Notification helper disabled in guest/login views (no banner)
     const showNotification = useCallback(
       (
-        message: string,
-        severity: 'success' | 'error' | 'warning' | 'info' = 'info'
-      ) => {
-        setNotification({ open: true, message, severity });
-      },
+        _message: string,
+        _severity: 'success' | 'error' | 'warning' | 'info' = 'info'
+      ) => undefined,
       []
     );
 
-    const hideNotification = useCallback(() => {
-      setNotification((prev) => ({ ...prev, open: false }));
-    }, []);
+    const hideNotification = useCallback(() => undefined, []);
 
     // Cable selection now handled entirely by DeletedCablesSidebar - custom popup removed
     const handleCableSelection = useCallback(
@@ -620,22 +616,6 @@ const UserCableMap = React.memo<UserCableMapProps>(
     // Automatic panning to selectedCable disabled to prevent conflicts with user map interactions
     // The DeletedCablesSidebar handles its own camera movements, so no automatic panning needed here
     // This prevents the zoom-out bug when users manually interact with the map
-
-    // Simplified initial notifications - reduced for better performance
-    useEffect(() => {
-      let timer: NodeJS.Timeout;
-
-      timer = setTimeout(() => {
-        showNotification(
-          '🌟 Enhanced User Cable Map: Click sidebar (☰) to navigate to deleted cables with smooth camera movement!',
-          'info'
-        );
-      }, 3000); // Reduced to single notification after 3 seconds
-
-      return () => {
-        clearTimeout(timer);
-      };
-    }, [showNotification]);
 
     // Optimized data fetching with caching and abort controller
     const fetchDataSummary = useCallback(
@@ -939,22 +919,8 @@ const UserCableMap = React.memo<UserCableMapProps>(
     }, []);
 
     const handleSidebarToggle = useCallback(() => {
-      setSidebarOpen((prev) => {
-        const newState = !prev;
-        if (newState) {
-          showNotification(
-            '🔧 DeletedCablesSidebar Activated: Click any deleted cable to automatically zoom and navigate to its exact location on the map!',
-            'info'
-          );
-        } else {
-          showNotification(
-            '📋 DeletedCablesSidebar closed. Use the menu button (☰) to access deleted cable viewing and navigation features.',
-            'info'
-          );
-        }
-        return newState;
-      });
-    }, [showNotification]);
+      setSidebarOpen((prev) => !prev);
+    }, []);
 
     const handleSidebarClose = useCallback(() => {
       setSidebarOpen(false);
@@ -1064,13 +1030,15 @@ const UserCableMap = React.memo<UserCableMapProps>(
             <Box
               sx={{
                 backgroundColor: 'rgba(0, 0, 0, 0.25)',
-                padding: '12px 16px',
-                borderRadius: '16px',
-                minWidth: 220,
+                padding: '12px 14px',
+                borderRadius: '14px',
+                minWidth: 'unset',
+                width: 'max-content',
                 boxShadow: '0 8px 16px rgba(0,0,0,0.25)',
                 border: '1px solid rgba(255,255,255,0.12)',
                 backdropFilter: 'blur(8px)',
-                color: '#FFFFFF'
+                color: '#FFFFFF',
+                alignSelf: 'flex-end'
               }}
             >
               <Typography variant="caption" sx={{ color: '#e0e0e0' }}>
@@ -1413,34 +1381,6 @@ const UserCableMap = React.memo<UserCableMapProps>(
               )}
             </MapContainer>
           </Box>
-
-          {/* Enhanced Notification System with DeletedCablesSidebar Integration Feedback */}
-          <Snackbar
-            open={notification.open}
-            autoHideDuration={7000} // Increased duration for more detailed messages
-            onClose={hideNotification}
-            anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-            sx={{ zIndex: 1300 }}
-          >
-            <Alert
-              onClose={hideNotification}
-              severity={notification.severity}
-              sx={{
-                width: '100%',
-                minWidth: '320px', // Ensure adequate width for detailed messages
-                fontSize: '14px',
-                '& .MuiAlert-icon': {
-                  fontSize: '22px' // Slightly larger icons for better visibility
-                },
-                '& .MuiAlert-message': {
-                  display: 'flex',
-                  alignItems: 'center'
-                }
-              }}
-            >
-              {notification.message}
-            </Alert>
-          </Snackbar>
         </Box>
       </UserCableMapErrorBoundary>
     );

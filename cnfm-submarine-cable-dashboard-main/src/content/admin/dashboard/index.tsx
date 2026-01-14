@@ -7,7 +7,7 @@ import {
   Typography,
   useTheme,
   Container,
-  Button
+  Button,
 } from '@mui/material';
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
@@ -30,6 +30,7 @@ function AdminDashboard() {
   const port = process.env.REACT_APP_PORT;
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
+  // Domestic view removed; always international
 
   // ✅ Create a reusable fetch function
   const fetchLastUpdate = useCallback(async () => {

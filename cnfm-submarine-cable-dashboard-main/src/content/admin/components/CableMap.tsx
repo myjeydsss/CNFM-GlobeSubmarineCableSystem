@@ -2,7 +2,7 @@ import { Box, Typography, IconButton, Paper } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import InfoIcon from '@mui/icons-material/Info';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { MapContainer, TileLayer, useMap, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, useMap, Marker, Popup, Polyline } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import L from 'leaflet';
@@ -213,7 +213,13 @@ const CableMapErrorBoundary: React.FC<{ children: React.ReactNode }> = ({ childr
   return <>{children}</>;
 };
 
-const CableMap: React.FC<CableMapProps> = ({ selectedCable, selectedCutType, mapRef: externalMapRef, onCloseCablePopup, setLastUpdate: externalSetLastUpdate }) => {
+const CableMap: React.FC<CableMapProps> = ({
+  selectedCable,
+  selectedCutType,
+  mapRef: externalMapRef,
+  onCloseCablePopup,
+  setLastUpdate: externalSetLastUpdate,
+}) => {
   // State management with better initialization
   const [mapHeight, setMapHeight] = useState('600px');
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -579,7 +585,6 @@ const CableMap: React.FC<CableMapProps> = ({ selectedCable, selectedCutType, map
             )} */}
           </Typography>
         </Box>
-
         <Box
           sx={{
             height: '100%',
