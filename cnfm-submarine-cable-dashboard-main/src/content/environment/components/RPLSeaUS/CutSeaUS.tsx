@@ -963,7 +963,7 @@ const CutSeaUS: React.FC = () => {
                 </MenuItem>
                 <MenuItem value="Fiber Break">Fiber Break</MenuItem>
                 <MenuItem value="Full Cut">Full Cut</MenuItem>
-                <MenuItem value="Unclassified">Unclassified</MenuItem>
+                <MenuItem value="For Verification">For Verification</MenuItem>
               </TextField>
             </Box>
           )}
